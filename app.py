@@ -222,12 +222,17 @@ def sessions():
         return jsonify({"sessions": []})
     out = []
     for f in files:
-        # Session display name (if any) lives in the header line.
+        # Session display name lives in the latest "session_info" entry
+        # (appended by pi on set_session_name), not in the header line.
         name = None
         try:
             with f.open() as fh:
-                header = json.loads(fh.readline())
-                name = header.get("name")
+                for line in fh:
+                    if '"type":"session_info"' in line:
+                        try:
+                            name = json.loads(line).get("name")
+                        except Exception:
+                            pass
         except Exception:
             pass
         try:
