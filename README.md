@@ -1,4 +1,4 @@
-# Database Project — pi agent web UI
+# pi agent web UI
 
 A browser-based chat interface for the [pi coding agent](https://github.com/earendil-works/pi).
 A small Flask backend ([`app.py`](app.py)) bridges the browser to a

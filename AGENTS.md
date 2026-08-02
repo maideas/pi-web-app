@@ -1,2 +1,2 @@
-# AGENTS.md — Database Project
+# AGENTS.md — pi agent web UI
 
