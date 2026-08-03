@@ -28,7 +28,9 @@ Features:
   a run that used tools. Markdown files render as styled HTML (via
   [md-to-html-renderer](https://github.com/maideas/md-to-html-renderer),
   `pi-web-app` palette, following the app theme), everything else gets
-  syntax-highlighted plain text
+  syntax-highlighted plain text. Links in rendered markdown are
+  intercepted: relative file links load in the viewer (resolved against
+  the file's directory), external links open in a new tab
 - Extension UI dialogs: confirm/select/input requests from pi extensions
   are answered via native browser dialogs
 - Light/dark theme (persisted in localStorage)

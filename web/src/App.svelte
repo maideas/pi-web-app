@@ -180,6 +180,60 @@
     dirEntries = resp.entries ?? []
   }
 
+  // Link clicks inside rendered markdown previews. Relative file links
+  // would otherwise resolve against the app page URL (e.g. /app.py) and
+  // navigate the SPA away to an invalid endpoint; instead load them in
+  // the viewer, resolved against the markdown file's own directory.
+  // External links open in a new tab; in-page anchors scroll natively.
+  function normalizePath(p) {
+    const parts = []
+    for (const seg of p.split('/')) {
+      if (!seg || seg === '.') continue
+      if (seg === '..') parts.pop()
+      else parts.push(seg)
+    }
+    return parts.join('/')
+  }
+
+  async function openLinkedFile(path) {
+    const f = await apiGet(`/api/file?path=${encodeURIComponent(path)}`)
+    if (f.path && !f.error) {
+      selectedFile = f
+      if (f.html) ensureMdCss()
+      // Sync the directory browser to the file's location (the selected
+      // entry is highlighted via selectedFile.path).
+      await browse(path.split('/').slice(0, -1).join('/'))
+      return
+    }
+    // Not a file — maybe a directory link: navigate the browser there.
+    const list = await apiGet(`/api/list?path=${encodeURIComponent(path)}`)
+    if (list.entries) {
+      selectedFile = null
+      browserPath = list.path ?? ''
+      browserParent = list.parent ?? null
+      dirEntries = list.entries
+    } else {
+      entries.push({ role: 'system', text: `⚠️ link target not found: ${path}` })
+    }
+  }
+
+  function onMdClick(e) {
+    const a = e.target.closest('a')
+    if (!a) return
+    const href = a.getAttribute('href') ?? ''
+    if (!href || href.startsWith('#')) return // in-page anchor: native scroll
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
+      a.target = '_blank'
+      a.rel = 'noopener noreferrer'
+      return
+    }
+    e.preventDefault()
+    const [pathPart] = href.split('#')
+    if (!pathPart) return
+    const base = selectedFile.path.split('/').slice(0, -1).join('/')
+    openLinkedFile(normalizePath(base ? `${base}/${pathPart}` : pathPart))
+  }
+
   async function selectEntry(e) {
     if (e.dir) {
       selectedFile = null
@@ -1158,7 +1212,9 @@
           <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
         </div>
         {#if selectedFile.html}
-          <div class="filecontent md">{@html selectedFile.html}</div>
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="filecontent md" onclick={onMdClick}>{@html selectedFile.html}</div>
         {:else if selectedFile.text !== null}
           <pre class="filecontent hljs"><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>
         {:else}
