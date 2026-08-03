@@ -444,8 +444,16 @@ aside {
   background: var(--panel-alt);
 }
 
+/* Keyboard-selected slash command (arrow keys + Enter): translucent
+   accent so the highlight stays subtle */
+.slash-item.selected {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
 .slash-name {
-  color: var(--accent);
+  /* --link is the readable accent in both themes; --accent itself is
+     too dark on the popup's panel background in the dark theme */
+  color: var(--link);
   font-family: ui-monospace, monospace;
   flex-shrink: 0;
 }

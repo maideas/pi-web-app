@@ -127,6 +127,18 @@
           .filter((c) => c.name.startsWith(input.slice(1)))
       : []
   )
+  // Keyboard navigation in the slash menu: ArrowUp/ArrowDown move the
+  // selection, Enter (and Tab) insert it. Resets whenever the
+  // suggestion list changes.
+  let slashIndex = $state(0)
+  $effect(() => {
+    slashSuggestions // track
+    slashIndex = 0
+  })
+  $effect(() => {
+    slashIndex // track
+    document.querySelector('.slash-item.selected')?.scrollIntoView({ block: 'nearest' })
+  })
 
   // Footer stats
   let stats = $state(null)
@@ -781,12 +793,28 @@
     return () => eventSource?.close()
   })
 
+  function applySlashSuggestion(c) {
+    input = '/' + c.name + ' '
+  }
+
   function onKeydown(e) {
-    // Tab completes to the first slash-command suggestion.
-    if (e.key === 'Tab' && slashSuggestions.length) {
-      e.preventDefault()
-      input = '/' + slashSuggestions[0].name + ' '
-      return
+    if (slashSuggestions.length) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        slashIndex = (slashIndex + 1) % slashSuggestions.length
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        slashIndex = (slashIndex - 1 + slashSuggestions.length) % slashSuggestions.length
+        return
+      }
+      // Tab completes without sending; Enter picks the selection.
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault()
+        applySlashSuggestion(slashSuggestions[slashIndex])
+        return
+      }
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -974,8 +1002,8 @@
   {/if}
   {#if slashSuggestions.length}
     <div class="slash-menu">
-      {#each slashSuggestions as c (c.name)}
-        <button class="slash-item" onmousedown={(e) => { e.preventDefault(); input = '/' + c.name + ' ' }}>
+      {#each slashSuggestions as c, i (c.name)}
+        <button class="slash-item" class:selected={i === slashIndex} onmousedown={(e) => { e.preventDefault(); applySlashSuggestion(c) }}>
           <span class="slash-name">/{c.name}</span>
           {#if c.description}<span class="slash-desc">{c.description}</span>{/if}
         </button>
