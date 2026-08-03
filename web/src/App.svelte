@@ -549,8 +549,7 @@
           refreshFiles()
         }
         scrollToBottom()
-        // Ready for the next prompt without clicking (after the disabled
-        // attribute is removed by the state update).
+        // Ready for the next prompt without clicking.
         tick().then(() => inputEl?.focus())
         break
 
@@ -1041,14 +1040,15 @@
       bind:value={input}
       onfocus={() => (showNewProject = false)}
       onkeydown={onKeydown}
-      placeholder={streaming ? 'Agent is working…' : 'Prompt pi… (Enter to send, Shift+Enter for newline)'}
+      placeholder={streaming ? 'Agent is working — type to steer, Enter to send…' : 'Prompt pi… (Enter to send, Shift+Enter for newline)'}
       rows="2"
-      disabled={streaming}
     ></textarea>
-    {#if streaming}
-      <button onclick={abort}>Abort</button>
+    <!-- While the agent works, an empty input means the button aborts;
+         with content it becomes a steer/send button again -->
+    {#if streaming && !input.trim() && attachments.length === 0}
+      <button onclick={abort}>abort</button>
     {:else}
-      <button onclick={sendPrompt} disabled={!input.trim() && attachments.length === 0}>Send</button>
+      <button onclick={sendPrompt} disabled={!input.trim() && attachments.length === 0}>send</button>
     {/if}
   </footer>
 

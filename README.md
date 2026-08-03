@@ -9,6 +9,9 @@ Features:
 
 - Chat with markdown rendering, syntax highlighting, and collapsible
   thinking/tool blocks
+- Steering: the input stays usable while the agent works — sending then
+  queues the message with pi's `steer` behavior; with an empty input the
+  send button acts as abort
 - Image and text-file attachments (text files are inlined into the prompt)
 - Model and thinking-level selectors, live token/cost/context stats
 - Multiple projects: register or create project directories, switch

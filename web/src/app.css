@@ -488,10 +488,6 @@ footer textarea {
   font: inherit;
 }
 
-footer textarea:disabled {
-  opacity: 0.6;
-}
-
 button {
   background: var(--accent);
   color: var(--accent-fg);
