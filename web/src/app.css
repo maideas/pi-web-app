@@ -64,7 +64,8 @@ main {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 10px 50px 0;
+  padding: 10px 50px 25px; /* generous bottom margin so the panes
+                              don't end flush with the window edge */
   box-sizing: border-box;
 }
 
@@ -337,6 +338,12 @@ aside {
   max-width: 90%;
 }
 
+/* Light theme: the pure-white --panel bubble looks off against the
+   off-white page; use the default background instead */
+:root[data-theme='light'] .msg.assistant {
+  background: var(--bg);
+}
+
 .msg.assistant pre {
   background: var(--code-bg);
   padding: 0.6rem;
@@ -366,12 +373,12 @@ aside {
   line-height: 1.3;
 }
 
-.msg.assistant h1 { font-size: 1.25rem; }
-.msg.assistant h2 { font-size: 1.15rem; }
-.msg.assistant h3 { font-size: 1.05rem; }
-.msg.assistant h4,
-.msg.assistant h5,
-.msg.assistant h6 { font-size: 1rem; }
+.msg.assistant h1 { font-size: 1.4rem; }
+.msg.assistant h2 { font-size: 1.2rem; }
+.msg.assistant h3 { font-size: 1.1rem; }
+.msg.assistant h4 { font-size: 1rem; }
+.msg.assistant h5 { font-size: 0.95rem; }
+.msg.assistant h6 { font-size: 0.9rem; }
 
 .msg.assistant p {
   margin: 0.4em 0;
@@ -791,7 +798,8 @@ select.sessionselect {
   overflow: auto;
   background: var(--bg);
   margin: 0;
-  padding: 1rem 1.2rem;
+  padding: 1rem 1.2rem 2.5rem; /* extra bottom padding so the content
+                                  doesn't end flush with the pane edge */
   font-family: ui-monospace, monospace;
   font-size: 0.95rem;
   line-height: 1.5;

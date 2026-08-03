@@ -881,7 +881,7 @@
   }
 
   function fmtCost(c) {
-    return c == null ? '—' : `$${c.toFixed(4)}`
+    return c == null ? '—' : `$${c.toFixed(2)}`
   }
 </script>
 
@@ -1126,7 +1126,7 @@
       {#if stats.contextUsage}
         <span>context: {stats.contextUsage.percent != null ? Math.round(stats.contextUsage.percent * 100) / 100 : '—'}% ({stats.contextUsage.tokens?.toLocaleString() ?? '—'}/{stats.contextUsage.contextWindow?.toLocaleString() ?? '—'})</span>
       {/if}
-      <span>tools: {stats.toolCalls ?? 0}</span>
+      <span>tool calls: {stats.toolCalls ?? 0}</span>
     {:else}
       <span>loading stats…</span>
     {/if}
