@@ -148,7 +148,10 @@ browser tabs can re-initialize and reconnect their SSE stream. Each
 switch stamps `lastOpened` in the registry; on startup the app respawns
 pi in the most recently opened project and resumes its latest session
 (by session-file mtime), and the same resume happens on every switch —
-covering the "auto-resume the most recent" option from §4.
+covering the "auto-resume the most recent" option from §4. Projects
+can also be detached again (registry only, files stay on disk) via a
+manage-projects popup (`POST /api/projects/<id>/detach`); the currently
+active project cannot be detached.
 
 Note: switching projects restarts the pi subprocess — per
 [AGENTS.md](AGENTS.md), that kills the running chat session, so the UI

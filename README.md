@@ -70,7 +70,8 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/jsconfig.json`](web/jsconfig.json) | JS type-checking config (checkJs) for the frontend |
 | [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, highlight.js) |
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
-| [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) | Design notes for future multi-project support (not implemented) |
+| [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (first increment implemented) |
+| [`md-renderer-palette-request.md`](md-renderer-palette-request.md) | Spec the renderer's `pi-web-app` palette was implemented from (marked implemented) |
 | [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask, md-to-html-renderer from git) |
 | [`web/public/`](web/public/) | Static assets (favicon, icons) copied into `dist/` |
 | [`AGENTS.md`](AGENTS.md) | Project conventions for coding agents |
@@ -129,7 +130,7 @@ File browser and static hosting:
 |---|---|---|
 | `/api/list?path=` | GET | List a directory under the project root |
 | `/api/markdown_css` | GET | Stylesheet for rendered markdown previews |
-| `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB) |
+| `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB); markdown files also return rendered HTML |
 | `/download/<path>` | GET | Download a file |
 | `/` | GET | Serve the built SPA from `web/dist/` |
 

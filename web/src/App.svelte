@@ -156,7 +156,7 @@
   let selectedFile = $state(null) // { path, text, html, reason }
 
   // Markdown previews come as rendered HTML from the backend; their
-  // stylesheet (md-to-html-renderer, github palette) is injected once.
+  // stylesheet (md-to-html-renderer, pi-web-app palette) is injected once.
   let mdCssLoaded = false
   async function ensureMdCss() {
     if (mdCssLoaded) return

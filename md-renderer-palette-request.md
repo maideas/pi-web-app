@@ -5,7 +5,9 @@
 > live in this app via `/api/markdown_css`; its dark variant follows the
 > app theme through the `data-theme` attribute on `<html>`. The venv
 > housekeeping below was done as well. This file is kept as the record
-> of the requested values.
+> of the requested values. The heading scale was later refined to
+> 1.4/1.2/1.1/1/0.95/0.9 rem (md-to-html-renderer commit `d2595a8`);
+> the "Heading scale" table below shows the originally requested values.
 
 **Goal.** Add a new palette (working name `pi-web-app`) to
 [md-to-html-renderer](/mnt/space/work/md-to-html-renderer/README.md)
