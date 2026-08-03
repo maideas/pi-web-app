@@ -5,4 +5,4 @@ itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.3
 Werkzeug==3.1.8
-md-to-html-renderer @ git+ssh://git@github.com/maideas/md-to-html-renderer.git@f1768c304cf6d8e13cfc6bfede1ae64e939c92b4
+md-to-html-renderer @ git+ssh://git@github.com/maideas/md-to-html-renderer.git@d65b737206bcb91b954d6c899712995d8bb31d9a

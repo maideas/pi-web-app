@@ -99,9 +99,10 @@ aside {
   justify-content: space-between; /* stretch groups across the chat width */
   align-items: center;
   flex-wrap: wrap;
-  column-gap: 1.5rem; /* minimum separation between control groups */
+  column-gap: 0.5rem; /* minimum separation between control groups;
+                         space-between distributes more when available */
   row-gap: 0.3rem;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem; /* slim side padding: more room before wrapping */
   min-height: 3.4rem;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
@@ -111,6 +112,13 @@ aside {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  min-width: 0; /* groups may shrink before the toolbar wraps */
+}
+
+/* Let selects squeeze with ellipsis when space is tight instead of
+   forcing the toolbar to wrap */
+.toolbar select {
+  min-width: 0;
 }
 
 /* New-project directory picker (modal popup) */
@@ -245,11 +253,13 @@ aside {
   white-space: nowrap;
 }
 
-/* Uniform height for all toolbar buttons */
+/* Uniform height for all toolbar buttons; slim horizontal padding so
+   the toolbar squeezes more before wrapping */
 .toolbar button {
   height: 2rem;
   box-sizing: border-box;
   line-height: 1;
+  padding: 0.4rem 0.6rem;
 }
 
 /* ---------- progress bar ---------- */
