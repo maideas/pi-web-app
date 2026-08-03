@@ -71,7 +71,6 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, highlight.js) |
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
 | [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (first increment implemented) |
-| [`md-renderer-palette-request.md`](md-renderer-palette-request.md) | Spec the renderer's `pi-web-app` palette was implemented from (marked implemented) |
 | [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask, md-to-html-renderer from git) |
 | [`web/public/`](web/public/) | Static assets (favicon, icons) copied into `dist/` |
 | [`AGENTS.md`](AGENTS.md) | Project conventions for coding agents |
