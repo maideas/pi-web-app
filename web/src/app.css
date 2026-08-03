@@ -377,6 +377,13 @@ aside {
   margin: 0.4em 0;
 }
 
+/* Chat message links: use the theme link color (also for :visited)
+   instead of the browser default blue/purple */
+.msg a,
+.msg a:visited {
+  color: var(--link);
+}
+
 .thinking-block {
   margin: 0 0 0.6rem;
   padding: 0.4rem 0.6rem;
@@ -521,6 +528,7 @@ footer textarea {
   border-radius: 8px;
   padding: 0.6rem;
   font: inherit;
+  line-height: 1.6;
 }
 
 button {
@@ -643,6 +651,9 @@ select.sessionselect {
   flex-direction: column;
   border-bottom: 1px solid var(--border);
   min-height: 0;
+  /* unify font with the chat messages */
+  font-family: system-ui, sans-serif;
+  font-size: 1rem;
 }
 
 .browser-path {
@@ -650,19 +661,24 @@ select.sessionselect {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  height: 3.4rem;
+  height: 3.6rem;
   box-sizing: border-box;
   font-size: 1rem;
+  line-height: 1.5;
   color: var(--muted);
   border-bottom: 1px solid var(--border-soft);
-  overflow: hidden;
   white-space: nowrap;
 }
 
+/* Clip long paths on the span, not the parent container, so the
+   parent's overflow doesn't clip descenders like _. Also force
+   line-height inheritance — the span's default 16px line box leaves
+   no room for descenders and its own overflow would clip them. */
 .browser-path span {
-  line-height: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.5;
 }
 
 .browser-path .up {
@@ -757,6 +773,7 @@ select.sessionselect {
   border-radius: 8px;
   padding: 0.4rem 1rem;
   font-size: 1rem;
+  font-family: Arial, sans-serif;
   /* same height as the toolbar buttons */
   height: 2rem;
   box-sizing: border-box;
@@ -782,11 +799,14 @@ select.sessionselect {
 }
 
 /* Rendered markdown preview (md-to-html-renderer output): let the
-   bundled markdown.css/palette control fonts and colors */
+   bundled markdown.css/palette control fonts and colors. The palette's
+   canvas-default matches the app's --panel exactly, so use that for the
+   container background so the preview blends with the viewer pane. */
 .filecontent.md {
   font-family: inherit;
   white-space: normal;
   font-size: 1rem;
+  background: var(--panel);
 }
 
 .filecontent.hljs code {
