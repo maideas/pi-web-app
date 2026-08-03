@@ -12,8 +12,9 @@ frontend notes.
   under `web/src/`**: `web/dist/` is gitignored, so Flask only serves
   what was last built. `npm run dev` gives a Vite dev server with a
   proxy to the backend for live reload.
-- There is no test suite yet; verify changes manually against a running
-  instance.
+- There is no test suite yet; verification is `python3 -m py_compile
+  app.py`, `ruff check app.py`, and `npm run build`, plus manual testing
+  against a running instance.
 
 ## Restart semantics (important)
 

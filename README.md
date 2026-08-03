@@ -16,7 +16,10 @@ Features:
   `/export` are mapped to their RPC equivalents; extension commands, prompt
   templates, and skills (as reported by pi's `get_commands`) are forwarded;
   unrecognized TUI-only commands are blocked with a hint
-- Project file browser with preview (syntax-highlighted) and download
+- Project file browser with preview (syntax-highlighted) and download;
+  auto-refreshes after a run that used tools
+- Extension UI dialogs: confirm/select/input requests from pi extensions
+  are answered via native browser dialogs
 - Light/dark theme (persisted in localStorage)
 
 **Limitation (by design):** single-user. One pi subprocess and one shared
@@ -50,6 +53,8 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/vite.config.js`](web/vite.config.js) | Vite config; dev-server proxy for all backend endpoints |
 | [`web/jsconfig.json`](web/jsconfig.json) | JS type-checking config (checkJs) for the frontend |
 | [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, highlight.js) |
+| [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
+| [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) | Design notes for future multi-project support (not implemented) |
 | [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask) |
 | [`web/public/`](web/public/) | Static assets (favicon, icons) copied into `dist/` |
 | [`AGENTS.md`](AGENTS.md) | Project conventions for coding agents |
@@ -122,11 +127,25 @@ cd web && npm install && npm run build && cd ..
 python app.py
 ```
 
+Or use the [Makefile](Makefile): `make build`, `make run` (rebuilds the
+frontend and starts the server in one step), `make dev` (Vite dev server).
+
 Frontend development with hot module reload:
 
 ```sh
 cd web && npm run dev   # proxies API calls to app.py on 127.0.0.1:5000
 ```
+(Keep `python app.py` running alongside the dev server.)
+
+Two things to know:
+
+- `web/dist/` is gitignored, so Flask only serves what was last built.
+  Re-run `npm run build` in [`web/`](web/) after every change under
+  `web/src/` (or use `npm run dev` for live reload).
+- Restarting [`app.py`](app.py) kills the pi subprocess and the chat
+  session it hosts. pi also caches slash commands (prompt templates,
+  skills, extension commands) at subprocess startup, so newly added
+  templates only appear after a restart.
 
 There is no automated test suite; verification is `python3 -m py_compile
 app.py`, `ruff check app.py`, and `npm run build`.
