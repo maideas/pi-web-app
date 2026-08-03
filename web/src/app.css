@@ -14,7 +14,7 @@
   --muted: #888;
   --muted2: #777;
   --status-fg: #a5a5ad;
-  --link: #9ecbff;
+  --link: #4493f8; /* github palette (md-to-html-renderer) dark link */
   --input-border: #444;
   --sys-bg: #3a2a1a;
   --sys-border: #7f5a2b;
@@ -40,7 +40,7 @@
   --muted: #8A8580;
   --muted2: #B5B0AA;
   --status-fg: #8A8580;
-  --link: #4F6E94;
+  --link: #0969da; /* github palette (md-to-html-renderer) light link */
   --input-border: #D9D5D0;
   --sys-bg: #FFF8E7;
   --sys-border: #E5C97B;
@@ -173,6 +173,41 @@ aside {
   padding: 1rem;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+/* Manage-projects popup rows */
+.mp-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.9rem;
+}
+
+.mp-row + .mp-row {
+  border-top: 1px solid var(--border-soft);
+}
+
+.mp-name {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.mp-path {
+  flex: 1;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl; /* clip the front of long paths, keep the leaf visible */
+  text-align: left;
+}
+
+.mp-row button {
+  flex-shrink: 0;
+  height: 2rem;
+  box-sizing: border-box;
+  line-height: 1;
 }
 
 .np-actions {
@@ -744,6 +779,14 @@ select.sessionselect {
   font-size: 0.95rem;
   line-height: 1.5;
   white-space: pre;
+}
+
+/* Rendered markdown preview (md-to-html-renderer output): let the
+   bundled markdown.css/palette control fonts and colors */
+.filecontent.md {
+  font-family: inherit;
+  white-space: normal;
+  font-size: 1rem;
 }
 
 .filecontent.hljs code {

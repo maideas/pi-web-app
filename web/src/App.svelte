@@ -83,6 +83,7 @@
   let projects = $state([])
   let currentProjectId = $state('')
   let showNewProject = $state(false)
+  let showManage = $state(false) // manage-projects popup (detach)
 
   // New-project directory picker (popup). Shows only directories and is
   // confined to the parent directory of the current project (users of a
@@ -94,20 +95,21 @@
   let npFolder = $state('')
   let npGit = $state(false)
 
-  // Auto-close the new-project dialog when unused: closes after
-  // NEW_PROJECT_IDLE_MS without interaction (any input/focus inside the
+  // Auto-close the project dialogs when unused: closes after
+  // DIALOG_IDLE_MS without interaction (any input/focus inside the
   // dialog resets the timer) or when the chat input gains focus.
-  const NEW_PROJECT_IDLE_MS = 20_000
-  let newProjectTimer = null
-  function pokeNewProjectTimer() {
-    clearTimeout(newProjectTimer)
-    newProjectTimer = setTimeout(() => {
+  const DIALOG_IDLE_MS = 20_000
+  let dialogTimer = null
+  function pokeDialogTimer() {
+    clearTimeout(dialogTimer)
+    dialogTimer = setTimeout(() => {
       showNewProject = false
-    }, NEW_PROJECT_IDLE_MS)
+      showManage = false
+    }, DIALOG_IDLE_MS)
   }
   $effect(() => {
-    if (showNewProject) pokeNewProjectTimer()
-    else clearTimeout(newProjectTimer)
+    if (showNewProject || showManage) pokeDialogTimer()
+    else clearTimeout(dialogTimer)
   })
 
   // Slash commands: client-side built-ins + pi commands (extension/skill/template)
@@ -151,7 +153,24 @@
   let browserPath = $state('')
   let browserParent = $state(null)
   let dirEntries = $state([])
-  let selectedFile = $state(null) // { path, text, reason }
+  let selectedFile = $state(null) // { path, text, html, reason }
+
+  // Markdown previews come as rendered HTML from the backend; their
+  // stylesheet (md-to-html-renderer, github palette) is injected once.
+  let mdCssLoaded = false
+  async function ensureMdCss() {
+    if (mdCssLoaded) return
+    mdCssLoaded = true
+    try {
+      const css = await (await fetch('/api/markdown_css')).text()
+      const style = document.createElement('style')
+      style.textContent = css
+      document.head.appendChild(style)
+    } catch (err) {
+      mdCssLoaded = false
+      console.error('markdown css', err)
+    }
+  }
   let toolsUsedInRun = $state(false)
 
   async function browse(path) {
@@ -167,6 +186,7 @@
       await browse(e.path)
     } else {
       selectedFile = await apiGet(`/api/file?path=${encodeURIComponent(e.path)}`)
+      if (selectedFile.html) ensureMdCss()
     }
   }
 
@@ -318,7 +338,10 @@
     toolsUsedInRun = false
     await browse('')
     apiGet('/api/file?path=README.md').then((r) => {
-      if (r.path && !r.error) selectedFile = r
+      if (r.path && !r.error) {
+        selectedFile = r
+        if (r.html) ensureMdCss()
+      }
     })
     await loadHistory()
     await Promise.all([
@@ -369,6 +392,21 @@
   function toggleNewProject() {
     showNewProject = !showNewProject
     if (showNewProject) browseDirs('')
+  }
+
+  function toggleManage() {
+    showManage = !showManage
+  }
+
+  // Detach = remove from the registry only; the directory stays on disk.
+  async function detachProject(p) {
+    if (p.current) return
+    if (!window.confirm(`Detach project “${p.name}” from the list?\n${p.path}\n\nThe directory itself is not deleted.`)) return
+    const resp = await apiPost(`/api/projects/${p.id}/detach`)
+    if (!resp.success) {
+      entries.push({ role: 'system', text: `⚠️ ${resp.error ?? 'failed to detach project'}` })
+    }
+    await loadProjects()
   }
 
   function npFullPath() {
@@ -864,6 +902,7 @@
         {/each}
       </select>
       <button onclick={toggleNewProject} title="New project">add</button>
+      <button onclick={toggleManage} title="Manage projects">manage</button>
       </div>
       <div class="tgroup">
       <select value={currentModel ? `${currentModel.provider}::${currentModel.id}` : ''} onchange={onModelChange}>
@@ -898,7 +937,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="np-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (showNewProject = false)}>
       <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <div class="np-modal" role="dialog" aria-modal="true" aria-label="Choose project directory" tabindex="-1" oninput={pokeNewProjectTimer} onfocusin={pokeNewProjectTimer} onclick={pokeNewProjectTimer}>
+      <div class="np-modal" role="dialog" aria-modal="true" aria-label="Choose project directory" tabindex="-1" oninput={pokeDialogTimer} onfocusin={pokeDialogTimer} onclick={pokeDialogTimer}>
         <div class="np-head">
           <span class="np-title">Choose project directory</span>
           <button class="np-close" onclick={() => (showNewProject = false)}>×</button>
@@ -929,6 +968,34 @@
           <label><input type="checkbox" bind:checked={npGit} /> git init</label>
           <button onclick={() => chooseProjectDir(`${npFullPath()}/${npFolder.trim()}`, npGit)} disabled={!npFolder.trim()}>Create</button>
           <button onclick={() => chooseProjectDir(npFullPath(), false)} disabled={!npPath}>Select</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+  {#if showManage}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="np-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (showManage = false)}>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="np-modal" role="dialog" aria-modal="true" aria-label="Manage projects" tabindex="-1" oninput={pokeDialogTimer} onfocusin={pokeDialogTimer} onclick={pokeDialogTimer}>
+        <div class="np-head">
+          <span class="np-title">Manage projects</span>
+          <button class="np-close" onclick={() => (showManage = false)}>×</button>
+        </div>
+        <div class="np-list">
+          {#each projects as p (p.id)}
+            <div class="mp-row">
+              <span class="mp-name">{p.name}{p.current ? ' (current)' : ''}</span>
+              <span class="mp-path" title={p.path}>{p.path}</span>
+              <button
+                onclick={() => detachProject(p)}
+                disabled={p.current}
+                title={p.current ? 'Switch to another project first' : 'Detach (the directory stays on disk)'}
+              >detach</button>
+            </div>
+          {:else}
+            <div class="np-empty">No projects registered.</div>
+          {/each}
         </div>
       </div>
     </div>
@@ -1038,7 +1105,7 @@
     <textarea
       bind:this={inputEl}
       bind:value={input}
-      onfocus={() => (showNewProject = false)}
+      onfocus={() => { showNewProject = false; showManage = false }}
       onkeydown={onKeydown}
       placeholder={streaming ? 'Agent is working — type to steer, Enter to send…' : 'Prompt pi… (Enter to send, Shift+Enter for newline)'}
       rows="2"
@@ -1090,7 +1157,9 @@
           <span class="fname">{selectedFile.path}</span>
           <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
         </div>
-        {#if selectedFile.text !== null}
+        {#if selectedFile.html}
+          <div class="filecontent md">{@html selectedFile.html}</div>
+        {:else if selectedFile.text !== null}
           <pre class="filecontent hljs"><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>
         {:else}
           <div class="filecontent binary">No preview ({selectedFile.reason}) — use download.</div>

@@ -558,11 +558,56 @@ def open_project(pid):
     return jsonify({"success": True, "project": entry})
 
 
+@app.route("/api/projects/<pid>/detach", methods=["POST"])
+def detach_project(pid):
+    """Remove a project from the registry (the directory stays on disk).
+
+    The currently active project cannot be detached — switch to another
+    project first.
+    """
+    with switch_lock:
+        if current["project"]["id"] == pid:
+            return jsonify({"success": False, "error": "cannot detach the current project"}), 400
+        projects = load_projects()
+        entry = next((p for p in projects if p["id"] == pid), None)
+        if entry is None:
+            return jsonify({"success": False, "error": "unknown project"}), 404
+        projects.remove(entry)
+        save_projects(projects)
+    return jsonify({"success": True})
+
+
 # ---------------------------------------------------------------------------
 # Project file browser / download
 # ---------------------------------------------------------------------------
 
 MAX_PREVIEW_BYTES = 512 * 1024
+
+# Markdown files are rendered to HTML in the file viewer via the
+# md-to-html-renderer package (pi-web-app palette, whose light/dark
+# variants follow the app's data-theme attribute); loaded lazily so
+# the import cost only hits when a markdown file is actually previewed.
+MD_EXTENSIONS = {".md", ".markdown"}
+_md_renderer = None
+_md_css = None
+
+
+def md_renderer():
+    global _md_renderer
+    if _md_renderer is None:
+        from md_to_html_renderer import MarkdownRenderer
+
+        _md_renderer = MarkdownRenderer()
+    return _md_renderer
+
+
+@app.route("/api/markdown_css")
+def markdown_css():
+    """Stylesheet (structure + github palette) for rendered markdown previews."""
+    global _md_css
+    if _md_css is None:
+        _md_css = md_renderer().stylesheets(palettes=["pi-web-app"])
+    return Response(_md_css, mimetype="text/css")
 
 
 def safe_path(rel: str) -> Path:
@@ -617,15 +662,21 @@ def api_file():
     try:
         size = p.stat().st_size
         if size > MAX_PREVIEW_BYTES:
-            return jsonify({"path": str(p.relative_to(root)), "text": None, "reason": f"too large ({size} bytes)"})
+            return jsonify({"path": str(p.relative_to(root)), "text": None, "html": None, "reason": f"too large ({size} bytes)"})
         data = p.read_bytes()
     except OSError:
         http_abort(500)
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
-        return jsonify({"path": str(p.relative_to(root)), "text": None, "reason": "binary file"})
-    return jsonify({"path": str(p.relative_to(root)), "text": text, "reason": None})
+        return jsonify({"path": str(p.relative_to(root)), "text": None, "html": None, "reason": "binary file"})
+    html = None
+    if p.suffix.lower() in MD_EXTENSIONS:
+        try:
+            html = md_renderer().render(text)
+        except Exception:
+            html = None  # fall back to the plain-text preview
+    return jsonify({"path": str(p.relative_to(root)), "text": text, "html": html, "reason": None})
 
 
 @app.route("/download/<path:rel>")

@@ -15,7 +15,8 @@ Features:
 - Image and text-file attachments (text files are inlined into the prompt)
 - Model and thinking-level selectors, live token/cost/context stats
 - Multiple projects: register or create project directories, switch
-  between them (pi respawns with the project dir as cwd); registry in
+  between them (pi respawns with the project dir as cwd), and detach
+  them again (registry only; the directory stays on disk); registry in
   `projects.json`. On startup the most recently opened project and its
   latest session are restored automatically
 - Session management: list, switch, create, and name sessions
@@ -23,8 +24,11 @@ Features:
   `/export` are mapped to their RPC equivalents; extension commands, prompt
   templates, and skills (as reported by pi's `get_commands`) are forwarded;
   unrecognized TUI-only commands are blocked with a hint
-- Project file browser with preview (syntax-highlighted) and download;
-  auto-refreshes after a run that used tools
+- Project file browser with preview and download; auto-refreshes after
+  a run that used tools. Markdown files render as styled HTML (via
+  [md-to-html-renderer](https://github.com/maideas/md-to-html-renderer),
+  `pi-web-app` palette, following the app theme), everything else gets
+  syntax-highlighted plain text
 - Extension UI dialogs: confirm/select/input requests from pi extensions
   are answered via native browser dialogs
 - Light/dark theme (persisted in localStorage)
@@ -65,7 +69,7 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, highlight.js) |
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
 | [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) | Design notes for future multi-project support (not implemented) |
-| [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask) |
+| [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask, md-to-html-renderer from git) |
 | [`web/public/`](web/public/) | Static assets (favicon, icons) copied into `dist/` |
 | [`AGENTS.md`](AGENTS.md) | Project conventions for coding agents |
 
@@ -115,12 +119,14 @@ Projects:
 | `/api/dirs?path=` | GET | Directory picker for the new-project dialog: directories only, confined to the parent of the current project root |
 | `/api/projects` | POST | Register an existing directory or create a new one (`path`, optional `gitInit`); the project name is the leaf directory name |
 | `/api/projects/<id>/open` | POST | Switch the active project: respawn pi with the project dir as cwd |
+| `/api/projects/<id>/detach` | POST | Remove a project from the registry (directory stays on disk; refuses the current project) |
 
 File browser and static hosting:
 
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/list?path=` | GET | List a directory under the project root |
+| `/api/markdown_css` | GET | Stylesheet for rendered markdown previews |
 | `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB) |
 | `/download/<path>` | GET | Download a file |
 | `/` | GET | Serve the built SPA from `web/dist/` |
