@@ -11,6 +11,8 @@ projects; the active one gets a `PiProcess` spawned with the project
 directory as cwd. Switching projects terminates that process and spawns
 a new one — all pi I/O goes through the `PiProcess` class so a process
 pool (one pi per project) can replace the single active instance later.
+On startup the most recently opened project (by lastOpened) is selected
+and its latest session resumed.
 """
 
 import json
@@ -63,10 +65,16 @@ class PiProcess:
         self.pending_lock = threading.Lock()
         threading.Thread(target=self._reader, daemon=True).start()
 
+    def is_alive(self) -> bool:
+        return self.proc.poll() is None
+
     def send_command(self, cmd: dict) -> None:
         with self.stdin_lock:
-            self.proc.stdin.write(json.dumps(cmd) + "\n")
-            self.proc.stdin.flush()
+            try:
+                self.proc.stdin.write(json.dumps(cmd) + "\n")
+                self.proc.stdin.flush()
+            except (BrokenPipeError, OSError, ValueError) as exc:
+                raise RuntimeError("pi process is gone") from exc
 
     def rpc_request(self, cmd: dict, timeout: float = 30.0) -> dict:
         """Send a command and wait for its correlated response."""
@@ -78,6 +86,8 @@ class PiProcess:
         try:
             self.send_command(cmd)
             return q.get(timeout=timeout)
+        except RuntimeError:
+            return {"success": False, "error": "pi process unavailable", "type": "response", "id": cmd_id}
         except queue.Empty:
             return {"success": False, "error": "timeout", "type": "response", "id": cmd_id}
         finally:
@@ -206,6 +216,18 @@ switch_lock = threading.Lock()
 
 
 def pi() -> PiProcess:
+    """The current pi process, respawning it first if it died.
+
+    Without this, a crashed pi would make every RPC call time out (30 s)
+    or fail on a broken pipe until the next project switch or restart.
+    """
+    p = current["pi"]
+    if p.is_alive():
+        return p
+    with switch_lock:
+        if current["pi"] is p and not p.is_alive():
+            current["pi"] = PiProcess(current["project"]["path"])
+            resume_latest_session(current["pi"])
     return current["pi"]
 
 
@@ -415,6 +437,41 @@ def ui_response():
 # ---------------------------------------------------------------------------
 
 
+@app.route("/api/dirs")
+def api_dirs():
+    """Directory picker for the new-project dialog.
+
+    Lists subdirectories (only directories, dotdirs excluded) confined
+    to the parent directory of the current project root.
+    """
+    base = project_root().parent
+    d = (base / request.args.get("path", "").lstrip("/")).resolve()
+    if d != base and base not in d.parents:
+        http_abort(403)
+    if not d.is_dir():
+        http_abort(404)
+    entries = []
+    try:
+        for f in sorted(d.iterdir(), key=lambda x: x.name.lower()):
+            try:
+                if f.is_dir() and not f.name.startswith("."):
+                    entries.append({"name": f.name, "path": str(f.relative_to(base))})
+            except OSError:
+                continue
+    except OSError:
+        http_abort(500)
+    return jsonify(
+        {
+            "base": str(base),
+            "path": str(d.relative_to(base)) if d != base else "",
+            "parent": None if d == base else str(d.parent.relative_to(base))
+            if d.parent != base
+            else "",
+            "entries": entries,
+        }
+    )
+
+
 @app.route("/api/projects")
 def list_projects():
     return jsonify(
@@ -474,7 +531,9 @@ def open_project(pid):
 
     Kills the running chat session (like an app restart). Other browser
     tabs learn about the switch via a `project_switched` event on the old
-    process's stream and must reconnect.
+    process's stream and must reconnect. Stamps `lastOpened` in the
+    registry (restored on next app start) and resumes the project's
+    latest session.
     """
     entry = next((p for p in load_projects() if p["id"] == pid), None)
     if entry is None:

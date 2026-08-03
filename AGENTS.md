@@ -26,6 +26,11 @@ frontend notes.
 - pi caches slash commands (prompt templates, skills, extension
   commands) at subprocess startup; newly added templates only appear
   after a restart.
+- If the pi subprocess dies unexpectedly, `pi()` in [app.py](app.py)
+  respawns it on the next request and resumes the latest session. After
+  a project switch, every browser tab must reconnect its SSE stream —
+  the initiating tab does this explicitly, other tabs via the
+  `project_switched` event.
 
 ## pi RPC facts learned the hard way
 

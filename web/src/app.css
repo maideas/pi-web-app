@@ -95,26 +95,97 @@ aside {
 
 .toolbar {
   display: flex;
-  justify-content: center;
+  justify-content: space-between; /* stretch groups across the chat width */
   align-items: center;
-  gap: 0.4rem;
+  flex-wrap: wrap;
+  column-gap: 1.5rem; /* minimum separation between control groups */
+  row-gap: 0.3rem;
   padding: 0.5rem 1rem;
-  height: 3.4rem;
+  min-height: 3.4rem;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
 }
 
-.newproject {
+.tgroup {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.4rem 1rem;
+}
+
+/* New-project directory picker (modal popup) */
+.np-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.np-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(480px, 90vw);
+  max-height: 70vh;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.np-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.8rem;
   border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  font-weight: 600;
+}
+
+.np-close {
+  background: none;
+  color: var(--muted);
+  padding: 0.2rem 0.6rem;
+}
+
+.np-path {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.np-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 8rem;
+}
+
+.np-empty {
+  padding: 1rem;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
-.newproject input[type='text'] {
+.np-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.8rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.np-actions input[type='text'] {
+  flex: 1;
   background: var(--panel);
   color: inherit;
   border: 1px solid var(--input-border);
@@ -123,18 +194,14 @@ aside {
   font: inherit;
 }
 
-.newproject input[type='text']:first-child {
-  flex: 1;
-}
-
-/* Same height for the directory input and the Create button */
-.newproject input[type='text'],
-.newproject button {
+/* Same height for the folder-name input and the buttons */
+.np-actions input[type='text'],
+.np-actions button {
   height: 2.2rem;
   box-sizing: border-box;
 }
 
-.newproject label {
+.np-actions label {
   display: flex;
   align-items: center;
   gap: 0.25rem;
@@ -142,8 +209,7 @@ aside {
   white-space: nowrap;
 }
 
-/* Same height for all toolbar buttons (the fullwidth ＋ glyph would
-   otherwise inflate the add-project button) */
+/* Uniform height for all toolbar buttons */
 .toolbar button {
   height: 2rem;
   box-sizing: border-box;
@@ -440,6 +506,12 @@ select {
   font-size: 1rem;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Fixed width so an empty session list (new project) doesn't resize
+   the select and flicker the whole toolbar */
+select.sessionselect {
+  width: 170px;
 }
 
 .attach {

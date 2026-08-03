@@ -35,7 +35,10 @@ event stream serve all connected browser tabs.
 Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode rpc
 ```
 
-- The Flask app spawns `pi --mode rpc` at startup. A reader thread parses
+- The Flask app spawns `pi --mode rpc` at startup (in the most recently
+  opened project's directory). If the pi process dies unexpectedly, it is
+  respawned automatically on the next request and resumes the latest
+  session. A reader thread parses
   pi's stdout, routes correlated command responses to waiting HTTP handlers
   (request/response correlation via UUIDs), and broadcasts all other events
   to SSE subscribers.
@@ -106,6 +109,7 @@ Projects:
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/projects` | GET | List registered projects (marks the current one) |
+| `/api/dirs?path=` | GET | Directory picker for the new-project dialog: directories only, confined to the parent of the current project root |
 | `/api/projects` | POST | Register an existing directory or create a new one (`path`, optional `gitInit`); the project name is the leaf directory name |
 | `/api/projects/<id>/open` | POST | Switch the active project: respawn pi with the project dir as cwd |
 

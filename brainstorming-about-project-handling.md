@@ -135,10 +135,12 @@ per-tab becomes interesting.
 
 Implemented as suggested: registry JSON + `GET/POST /api/projects` +
 a project-switcher dropdown that respawns pi with the new cwd and
-loads that project's sessions. New-project dialog covers §3 flavors 1
-(empty dir, optional `git init`) and 2 (register existing directory);
-the git-clone flavor, uploads, templates, process pool, and per-tab
-projects are deferred.
+loads that project's sessions. The new-project popup is a directory
+picker (`GET /api/dirs`, directories only, confined to the parent of
+the current project — web users usually don't know absolute paths)
+covering §3 flavors 1 (create a folder, optional `git init`) and 2
+(select an existing directory); the git-clone flavor, uploads,
+templates, process pool, and per-tab projects are deferred.
 
 Additional details: on project switch the old process broadcasts a
 `project_switched` event before being terminated, so other open

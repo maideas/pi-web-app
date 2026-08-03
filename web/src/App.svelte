@@ -83,12 +83,20 @@
   let projects = $state([])
   let currentProjectId = $state('')
   let showNewProject = $state(false)
-  let newProjectPath = $state('')
-  let newProjectGit = $state(false)
+
+  // New-project directory picker (popup). Shows only directories and is
+  // confined to the parent directory of the current project (users of a
+  // web app usually don't know absolute paths, so they browse instead).
+  let npBase = $state('')
+  let npPath = $state('')
+  let npParent = $state(null)
+  let npEntries = $state([])
+  let npFolder = $state('')
+  let npGit = $state(false)
 
   // Auto-close the new-project dialog when unused: closes after
-  // NEW_PROJECT_IDLE_MS without interaction; any input/focus inside the
-  // dialog resets the timer.
+  // NEW_PROJECT_IDLE_MS without interaction (any input/focus inside the
+  // dialog resets the timer) or when the chat input gains focus.
   const NEW_PROJECT_IDLE_MS = 20_000
   let newProjectTimer = null
   function pokeNewProjectTimer() {
@@ -318,6 +326,11 @@
       await loadProjects() // reset the select to the real current project
       return
     }
+    // Our SSE stream is still subscribed to the now-terminated old pi
+    // process — reconnect, or we won't see any events from the new one.
+    // (Other tabs learn via the project_switched event; the initiating
+    // tab must reconnect itself.)
+    reconnectEvents()
     await reinit()
     inputEl?.focus()
   }
@@ -332,20 +345,35 @@
     await switchProject(id)
   }
 
-  async function createProject() {
-    const path = newProjectPath.trim()
-    if (!path) return
-    const resp = await apiPost('/api/projects', {
-      path,
-      gitInit: newProjectGit,
-    })
+  async function browseDirs(path) {
+    const resp = await apiGet(`/api/dirs?path=${encodeURIComponent(path)}`)
+    if (resp.error) return
+    npBase = resp.base ?? ''
+    npPath = resp.path ?? ''
+    npParent = resp.parent ?? null
+    npEntries = resp.entries ?? []
+  }
+
+  function toggleNewProject() {
+    showNewProject = !showNewProject
+    if (showNewProject) browseDirs('')
+  }
+
+  function npFullPath() {
+    return npPath ? `${npBase}/${npPath}` : npBase
+  }
+
+  // Register `path` as a project (creating it first when it doesn't
+  // exist) and switch to it.
+  async function chooseProjectDir(path, gitInit) {
+    const resp = await apiPost('/api/projects', { path, gitInit })
     if (!resp.success) {
       entries.push({ role: 'system', text: `⚠️ ${resp.error ?? 'failed to create project'}` })
       return
     }
     showNewProject = false
-    newProjectPath = ''
-    newProjectGit = false
+    npFolder = ''
+    npGit = false
     await loadProjects()
     if (streaming && !window.confirm('Switch to the new project now? This restarts the agent and kills the running session.')) return
     await switchProject(resp.project.id)
@@ -775,16 +803,21 @@
   <div class="body">
    <div class="chatcol">
     <div class="toolbar">
+      <div class="tgroup">
       <select bind:value={theme} title="Theme">
-        <option value="dark">dark</option>
         <option value="light">light</option>
+        <option value="dark">dark</option>
       </select>
+      </div>
+      <div class="tgroup">
       <select value={currentProjectId} onchange={onProjectChange} title="Project">
         {#each projects as p (p.id)}
           <option value={p.id}>{p.name}</option>
         {/each}
       </select>
-      <button onclick={() => (showNewProject = !showNewProject)} title="New project">＋</button>
+      <button onclick={toggleNewProject} title="New project">Add</button>
+      </div>
+      <div class="tgroup">
       <select value={currentModel ? `${currentModel.provider}::${currentModel.id}` : ''} onchange={onModelChange}>
         {#each models as m}
           <option value={`${m.provider}::${m.id}`} selected={currentModel && m.provider === currentModel.provider && m.id === currentModel.id}>
@@ -797,7 +830,9 @@
           <option value={l} selected={l === thinkingLevel}>{l}</option>
         {/each}
       </select>
-      <select value={currentSessionPath} onchange={onSessionChange}>
+      </div>
+      <div class="tgroup">
+      <select class="sessionselect" value={currentSessionPath} onchange={onSessionChange}>
         {#if !currentSessionPath}
           <option value="" disabled>sessions…</option>
         {/if}
@@ -807,21 +842,47 @@
           </option>
         {/each}
       </select>
-      {#if streaming}
-        <button onclick={abort}>Abort</button>
-      {/if}
       <button onclick={newSession}>New</button>
+      </div>
     </div>
   {#if showNewProject}
-    <div class="newproject" oninput={pokeNewProjectTimer} onfocusin={pokeNewProjectTimer}>
-      <input
-        type="text"
-        bind:value={newProjectPath}
-        placeholder="directory (existing = register, new = create)"
-        onkeydown={(e) => e.key === 'Enter' && createProject()}
-      />
-      <label><input type="checkbox" bind:checked={newProjectGit} /> git init</label>
-      <button onclick={createProject} disabled={!newProjectPath.trim()}>Create</button>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="np-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (showNewProject = false)}>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="np-modal" role="dialog" aria-modal="true" aria-label="Choose project directory" tabindex="-1" oninput={pokeNewProjectTimer} onfocusin={pokeNewProjectTimer} onclick={pokeNewProjectTimer}>
+        <div class="np-head">
+          <span class="np-title">Choose project directory</span>
+          <button class="np-close" onclick={() => (showNewProject = false)}>×</button>
+        </div>
+        <div class="np-path">
+          {#if npParent !== null}
+            <button class="up" onclick={() => browseDirs(npParent)}>← up</button>
+          {/if}
+          <span title={npFullPath()}>{npBase}/{npPath}</span>
+        </div>
+        <div class="np-list">
+          {#each npEntries as e}
+            <button class="direntry" onclick={() => browseDirs(e.path)}>
+              <span class="icon">📁</span>
+              <span class="name">{e.name}</span>
+            </button>
+          {:else}
+            <div class="np-empty">No subdirectories here.</div>
+          {/each}
+        </div>
+        <div class="np-actions">
+          <input
+            type="text"
+            bind:value={npFolder}
+            placeholder="new folder name"
+            onkeydown={(e) => e.key === 'Enter' && npFolder.trim() && chooseProjectDir(`${npFullPath()}/${npFolder.trim()}`, npGit)}
+          />
+          <label><input type="checkbox" bind:checked={npGit} /> git init</label>
+          <button onclick={() => chooseProjectDir(`${npFullPath()}/${npFolder.trim()}`, npGit)} disabled={!npFolder.trim()}>Create</button>
+          <button onclick={() => chooseProjectDir(npFullPath(), false)} disabled={!npPath}>Select</button>
+        </div>
+      </div>
     </div>
   {/if}
   <div class="chat" bind:this={chatEl}>
@@ -935,7 +996,11 @@
       rows="2"
       disabled={streaming}
     ></textarea>
-    <button onclick={sendPrompt} disabled={streaming || (!input.trim() && attachments.length === 0)}>Send</button>
+    {#if streaming}
+      <button onclick={abort}>Abort</button>
+    {:else}
+      <button onclick={sendPrompt} disabled={!input.trim() && attachments.length === 0}>Send</button>
+    {/if}
   </footer>
 
   <div class="statusbar">
