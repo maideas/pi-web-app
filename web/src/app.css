@@ -511,8 +511,8 @@ aside {
 
 footer {
   display: flex;
-  align-items: flex-end; /* keep attach/send at the bottom as the
-                           auto-growing textarea gets taller */
+  align-items: center; /* vertically center attach/send beside the
+                          auto-growing textarea */
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   border-top: 1px solid var(--border);
@@ -799,14 +799,18 @@ select.sessionselect {
 }
 
 /* Rendered markdown preview (md-to-html-renderer output): let the
-   bundled markdown.css/palette control fonts and colors. The palette's
-   canvas-default matches the app's --panel exactly, so use that for the
-   container background so the preview blends with the viewer pane. */
+   bundled markdown.css/palette control fonts and colors, but use the
+   app's default background for the container and the markdown body
+   itself (the renderer sets canvas-default on .markdown-body). */
 .filecontent.md {
   font-family: inherit;
   white-space: normal;
   font-size: 1rem;
-  background: var(--panel);
+  background: var(--bg);
+}
+
+.filecontent.md .markdown-body {
+  background: transparent;
 }
 
 .filecontent.hljs code {
