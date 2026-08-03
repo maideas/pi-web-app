@@ -107,6 +107,7 @@
   let browserParent = $state(null)
   let dirEntries = $state([])
   let selectedFile = $state(null) // { path, text, reason }
+  let toolsUsedInRun = $state(false)
 
   async function browse(path) {
     const resp = await apiGet(`/api/list?path=${encodeURIComponent(path)}`)
@@ -121,6 +122,30 @@
       await browse(e.path)
     } else {
       selectedFile = await apiGet(`/api/file?path=${encodeURIComponent(e.path)}`)
+    }
+  }
+
+  // After a run that used tools, files may have changed: reload the current
+  // directory and the open file. If either vanished in the meantime, fall
+  // back to the project root.
+  async function refreshFiles() {
+    const list = await apiGet(`/api/list?path=${encodeURIComponent(browserPath)}`)
+    if (!list.entries) {
+      selectedFile = null
+      await browse('')
+      return
+    }
+    browserPath = list.path ?? ''
+    browserParent = list.parent ?? null
+    dirEntries = list.entries
+    if (selectedFile) {
+      const f = await apiGet(`/api/file?path=${encodeURIComponent(selectedFile.path)}`)
+      if (f.error) {
+        selectedFile = null
+        await browse('')
+      } else {
+        selectedFile = f
+      }
     }
   }
 
@@ -346,6 +371,7 @@
         break
 
       case 'tool_execution_start':
+        toolsUsedInRun = true
         entries.push({
           role: 'tool',
           name: ev.toolName,
@@ -384,6 +410,11 @@
         streaming = false
         refreshStatsDebounced()
         refreshSessions() // pick up new session files / reordered mtimes
+        if (toolsUsedInRun) {
+          // Consumed on the first of agent_end/agent_settled; the second is a no-op.
+          toolsUsedInRun = false
+          refreshFiles()
+        }
         scrollToBottom()
         // Ready for the next prompt without clicking (after the disabled
         // attribute is removed by the state update).
