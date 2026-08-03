@@ -1082,7 +1082,7 @@
             fill="currentColor"
           />
         </svg>
-        <div class="chat-empty-text">pi agent</div>
+        <div class="chat-empty-text">pi agent web UI</div>
       </div>
     {/if}
     {#each entries as entry}
