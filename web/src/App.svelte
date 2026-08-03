@@ -997,12 +997,15 @@
           <button class="np-close" onclick={() => (showNewProject = false)}>×</button>
         </div>
         <div class="np-path">
-          {#if npParent !== null}
-            <button class="up" onclick={() => browseDirs(npParent)}>up</button>
-          {/if}
           <span title={npFullPath()}>{npBase}/{npPath}</span>
         </div>
         <div class="np-list">
+          {#if npParent !== null}
+            <button class="direntry" onclick={() => browseDirs(npParent)}>
+              <span class="icon">📁</span>
+              <span class="name">..</span>
+            </button>
+          {/if}
           {#each npEntries as e}
             <button class="direntry" onclick={() => browseDirs(e.path)}>
               <span class="icon">📁</span>
@@ -1190,12 +1193,15 @@
    <aside>
     <div class="browser">
       <div class="browser-path">
-        {#if browserParent !== null}
-          <button class="up" onclick={() => browse(browserParent)}>up</button>
-        {/if}
         <span>/{browserPath}</span>
       </div>
       <div class="dirlist">
+        {#if browserParent !== null}
+          <button class="direntry" onclick={() => browse(browserParent)}>
+            <span class="icon">📁</span>
+            <span class="name">..</span>
+          </button>
+        {/if}
         {#each dirEntries as e}
           <button class="direntry" class:selected={selectedFile?.path === e.path} onclick={() => selectEntry(e)}>
             <span class="icon">{e.dir ? '📁' : '📄'}</span>

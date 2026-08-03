@@ -688,20 +688,6 @@ select.sessionselect {
   line-height: 1.5;
 }
 
-.browser-path .up {
-  padding: 0.4rem 1rem;
-  font-size: 1rem;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-fg);
-  border: none;
-  cursor: pointer;
-  /* same height as the toolbar buttons */
-  height: 2rem;
-  box-sizing: border-box;
-  line-height: 1;
-}
-
 .dirlist {
   flex: 1;
   overflow-y: auto;
