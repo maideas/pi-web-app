@@ -469,6 +469,8 @@ aside {
 
 footer {
   display: flex;
+  align-items: flex-end; /* keep attach/send at the bottom as the
+                           auto-growing textarea gets taller */
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   border-top: 1px solid var(--border);
@@ -477,6 +479,7 @@ footer {
 footer textarea {
   flex: 1;
   resize: none;
+  overflow-y: hidden; /* flipped to auto by autogrowInput past the cap */
   background: var(--panel);
   color: inherit;
   border: 1px solid var(--input-border);

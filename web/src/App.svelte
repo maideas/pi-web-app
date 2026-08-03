@@ -797,6 +797,27 @@
     input = '/' + c.name + ' '
   }
 
+  // Auto-grow the prompt textarea with the typed lines, up to
+  // INPUT_MAX_LINES; beyond that it scrolls instead of growing.
+  const INPUT_MAX_LINES = 8
+  function autogrowInput() {
+    if (!inputEl) return
+    inputEl.style.height = 'auto'
+    const style = getComputedStyle(inputEl)
+    const line = parseFloat(style.lineHeight) || 20
+    const pad = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+    // The textarea is content-box: style.height sets the content height,
+    // but scrollHeight includes the padding — subtract it, otherwise the
+    // padding is counted twice and the field is always one line too tall.
+    const content = inputEl.scrollHeight - pad
+    inputEl.style.height = Math.min(content, line * INPUT_MAX_LINES) + 'px'
+    inputEl.style.overflowY = content > line * INPUT_MAX_LINES ? 'auto' : 'hidden'
+  }
+  $effect(() => {
+    input // track: re-run on every keystroke and on reset after send
+    autogrowInput()
+  })
+
   function onKeydown(e) {
     if (slashSuggestions.length) {
       if (e.key === 'ArrowDown') {
