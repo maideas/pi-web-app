@@ -1,6 +1,10 @@
 # Brainstorming: handling real projects in the pi web app
 
-Status: ideas only, nothing implemented yet.
+Status: **first increment implemented** (see §7): project registry
+(`projects.json` in the app dir, gitignored), `GET/POST /api/projects`,
+`POST /api/projects/<id>/open`, a project switcher + new-project dialog
+in the toolbar, and the file browser rooted at the current project.
+Decisions for the §6 open questions are recorded there.
 Context: the app (see [README.md](README.md)) is currently a chat UI
 around a single `pi --mode rpc` process bound to one directory. It
 should become a **tool for working on many projects**: create new
@@ -109,24 +113,40 @@ per-tab becomes interesting.
   A referencing code in project B works without special support —
   document rather than build.
 
-## 6. Open questions
+## 6. Open questions — decided for the first increment
 
-1. Where do projects live? One workspace root (`/mnt/space/work/*`?) or
-   arbitrary paths anywhere?
-2. Parallel or serial? Is "agent works on A while I review B" a real
-   need soon, or is one-at-a-time fine for now?
-3. How much metadata? Just name+path, or descriptions/tags/templates?
-4. Should the app itself remain a project in the list (dogfooding, as
-   today), just as the default?
-5. Sessions: per-project sidebar (pi's natural model) or a global
-   session view across projects?
+1. Where do projects live? → **Arbitrary paths anywhere.** No fixed
+   workspace root; registering an existing directory in place (§5) is
+   too useful to give up.
+2. Parallel or serial? → **Serial (model A).** All pi I/O goes through
+   a `PiProcess` wrapper class in [app.py](app.py), so a process pool
+   (model B) can slot in later without reworking the endpoints.
+3. How much metadata? → **Minimal:** `{id, name, path, created}`.
+   Activity info can be derived from session-file mtimes later; skip
+   tags/templates until they hurt.
+4. Should the app itself remain a project? → **Yes.** The registry is
+   seeded with the app's own directory as the default project on first
+   run.
+5. Sessions: per-project or global? → **Per-project** (pi's natural
+   model; sessions already live per-cwd). A global cross-project view
+   is a possible later extra.
 
-## 7. Suggested first increment
+## 7. First increment — DONE
 
-Registry JSON + `GET/POST /api/projects` + a project-switcher dropdown
-that respawns pi with the new cwd and resumes the latest session.
-Everything else (uploads, templates, process pool, per-tab projects)
-layers on top.
+Implemented as suggested: registry JSON + `GET/POST /api/projects` +
+a project-switcher dropdown that respawns pi with the new cwd and
+loads that project's sessions. New-project dialog covers §3 flavors 1
+(empty dir, optional `git init`) and 2 (register existing directory);
+the git-clone flavor, uploads, templates, process pool, and per-tab
+projects are deferred.
+
+Additional details: on project switch the old process broadcasts a
+`project_switched` event before being terminated, so other open
+browser tabs can re-initialize and reconnect their SSE stream. Each
+switch stamps `lastOpened` in the registry; on startup the app respawns
+pi in the most recently opened project and resumes its latest session
+(by session-file mtime), and the same resume happens on every switch —
+covering the "auto-resume the most recent" option from §4.
 
 Note: switching projects restarts the pi subprocess — per
 [AGENTS.md](AGENTS.md), that kills the running chat session, so the UI

@@ -104,6 +104,52 @@ aside {
   border-bottom: 1px solid var(--border);
 }
 
+.newproject {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 0.9rem;
+}
+
+.newproject input[type='text'] {
+  background: var(--panel);
+  color: inherit;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 0 0.6rem;
+  font: inherit;
+}
+
+.newproject input[type='text']:first-child {
+  flex: 1;
+}
+
+/* Same height for the directory input and the Create button */
+.newproject input[type='text'],
+.newproject button {
+  height: 2.2rem;
+  box-sizing: border-box;
+}
+
+.newproject label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Same height for all toolbar buttons (the fullwidth ＋ glyph would
+   otherwise inflate the add-project button) */
+.toolbar button {
+  height: 2rem;
+  box-sizing: border-box;
+  line-height: 1;
+}
+
 /* ---------- progress bar ---------- */
 
 .progress-bar {

@@ -11,6 +11,10 @@ Features:
   thinking/tool blocks
 - Image and text-file attachments (text files are inlined into the prompt)
 - Model and thinking-level selectors, live token/cost/context stats
+- Multiple projects: register or create project directories, switch
+  between them (pi respawns with the project dir as cwd); registry in
+  `projects.json`. On startup the most recently opened project and its
+  latest session are restored automatically
 - Session management: list, switch, create, and name sessions
 - Slash commands with autocomplete: `/new`, `/abort`, `/compact`, `/name`,
   `/export` are mapped to their RPC equivalents; extension commands, prompt
@@ -60,7 +64,7 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`AGENTS.md`](AGENTS.md) | Project conventions for coding agents |
 
 Generated content (not committed): `web/dist/`, `web/node_modules/`,
-`.venv/`, `build/`, `__pycache__/`.
+`.venv/`, `build/`, `__pycache__/`, `projects.json`.
 
 ## Backend API (Flask → pi RPC bridge)
 
@@ -97,6 +101,14 @@ Sessions and slash commands:
 | `/export_html` | POST | Export session to an HTML file |
 | `/ui-response` | POST | Relay extension UI dialog responses to pi |
 
+Projects:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/projects` | GET | List registered projects (marks the current one) |
+| `/api/projects` | POST | Register an existing directory or create a new one (`path`, optional `gitInit`); the project name is the leaf directory name |
+| `/api/projects/<id>/open` | POST | Switch the active project: respawn pi with the project dir as cwd |
+
 File browser and static hosting:
 
 | Endpoint | Method | Purpose |
@@ -106,8 +118,8 @@ File browser and static hosting:
 | `/download/<path>` | GET | Download a file |
 | `/` | GET | Serve the built SPA from `web/dist/` |
 
-Paths for `/api/*` and `/download/*` are confined to the project root
-(traversal attempts get 403). POST endpoints validate their JSON bodies and
+Paths for `/api/list`, `/api/file`, and `/download/*` are confined to
+the current project's root (traversal attempts get 403). POST endpoints validate their JSON bodies and
 return 400 on missing fields; RPC calls time out after 30 s with a
 `{"success": false, "error": "timeout"}` response.
 
@@ -143,9 +155,12 @@ Two things to know:
   Re-run `npm run build` in [`web/`](web/) after every change under
   `web/src/` (or use `npm run dev` for live reload).
 - Restarting [`app.py`](app.py) kills the pi subprocess and the chat
-  session it hosts. pi also caches slash commands (prompt templates,
-  skills, extension commands) at subprocess startup, so newly added
-  templates only appear after a restart.
+  session it hosts. Switching projects does the same by design (the UI
+  warns first if a run is active); other open tabs get a
+  `project_switched` event and reconnect. pi also caches slash commands
+  (prompt templates, skills, extension commands) at subprocess startup,
+  so newly added templates only appear after a restart or project
+  switch.
 
 There is no automated test suite; verification is `python3 -m py_compile
 app.py`, `ruff check app.py`, and `npm run build`.

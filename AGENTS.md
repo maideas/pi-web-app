@@ -20,7 +20,9 @@ frontend notes.
 
 - Changes to [app.py](app.py) require a Flask restart, which **kills the
   pi subprocess and the chat session it hosts**. Warn the user before
-  restarting, or let them do it.
+  restarting, or let them do it. Switching projects
+  (`POST /api/projects/<id>/open`) also respawns the pi subprocess —
+  same warning applies.
 - pi caches slash commands (prompt templates, skills, extension
   commands) at subprocess startup; newly added templates only appear
   after a restart.

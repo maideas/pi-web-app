@@ -77,6 +77,31 @@
   let sessions = $state([])
   let currentSessionPath = $state('')
 
+  // Project list / switcher. The active project is server-global: switching
+  // respawns the pi subprocess with the project dir as cwd (killing the
+  // running chat session, like an app restart).
+  let projects = $state([])
+  let currentProjectId = $state('')
+  let showNewProject = $state(false)
+  let newProjectPath = $state('')
+  let newProjectGit = $state(false)
+
+  // Auto-close the new-project dialog when unused: closes after
+  // NEW_PROJECT_IDLE_MS without interaction; any input/focus inside the
+  // dialog resets the timer.
+  const NEW_PROJECT_IDLE_MS = 20_000
+  let newProjectTimer = null
+  function pokeNewProjectTimer() {
+    clearTimeout(newProjectTimer)
+    newProjectTimer = setTimeout(() => {
+      showNewProject = false
+    }, NEW_PROJECT_IDLE_MS)
+  }
+  $effect(() => {
+    if (showNewProject) pokeNewProjectTimer()
+    else clearTimeout(newProjectTimer)
+  })
+
   // Slash commands: client-side built-ins + pi commands (extension/skill/template)
   // fetched from /commands. Built-in TUI commands (/model, /resume, ...) are NOT
   // recognized via RPC and get intercepted/blocked in handleSlashCommand.
@@ -258,6 +283,74 @@
     if (resp.success) thinkingLevel = e.target.value
   }
 
+  async function loadProjects() {
+    const resp = await apiGet('/api/projects')
+    projects = resp.projects ?? []
+    currentProjectId = projects.find((p) => p.current)?.id ?? ''
+  }
+
+  // Full (re)initialization: after mount, a project switch, or a
+  // project_switched event from another tab.
+  async function reinit() {
+    entries = []
+    attachments = []
+    selectedFile = null
+    toolsUsedInRun = false
+    await browse('')
+    apiGet('/api/file?path=README.md').then((r) => {
+      if (r.path && !r.error) selectedFile = r
+    })
+    await loadHistory()
+    await Promise.all([
+      refreshState(),
+      refreshModels(),
+      refreshStats(),
+      refreshSessions(),
+      loadCommands(),
+      loadProjects(),
+    ])
+  }
+
+  async function switchProject(id) {
+    const resp = await apiPost(`/api/projects/${id}/open`)
+    if (!resp.success) {
+      entries.push({ role: 'system', text: `⚠️ ${resp.error ?? 'failed to open project'}` })
+      await loadProjects() // reset the select to the real current project
+      return
+    }
+    await reinit()
+    inputEl?.focus()
+  }
+
+  async function onProjectChange(e) {
+    const id = e.target.value
+    if (!id || id === currentProjectId) return
+    if (streaming && !window.confirm('Switching projects restarts the agent and kills the running session. Continue?')) {
+      e.target.value = currentProjectId
+      return
+    }
+    await switchProject(id)
+  }
+
+  async function createProject() {
+    const path = newProjectPath.trim()
+    if (!path) return
+    const resp = await apiPost('/api/projects', {
+      path,
+      gitInit: newProjectGit,
+    })
+    if (!resp.success) {
+      entries.push({ role: 'system', text: `⚠️ ${resp.error ?? 'failed to create project'}` })
+      return
+    }
+    showNewProject = false
+    newProjectPath = ''
+    newProjectGit = false
+    await loadProjects()
+    if (streaming && !window.confirm('Switch to the new project now? This restarts the agent and kills the running session.')) return
+    await switchProject(resp.project.id)
+  }
+
   async function onSessionChange(e) {
     const path = e.target.value
     if (!path || path === currentSessionPath) return
@@ -423,6 +516,18 @@
 
       case 'extension_ui_request':
         handleUiRequest(ev).catch((err) => console.error('UI request error', err))
+        break
+
+      case 'project_switched':
+        // Another tab (or client) switched the active project: our SSE
+        // stream is attached to the now-dead pi process, so reconnect
+        // and load the new project's state.
+        entries.push({
+          role: 'system',
+          text: `⇄ switched to project “${ev.project?.name ?? '?'}”`,
+        })
+        reconnectEvents()
+        reinit()
         break
     }
   }
@@ -623,20 +728,11 @@
     if (r.success) slashCommands = r.data?.commands ?? []
   }
 
-  onMount(() => {
-    browse('')
-    // Show the project README in the file viewer on startup, if present.
-    apiGet('/api/file?path=README.md').then((r) => {
-      if (r.path && !r.error) selectedFile = r
-    })
-    loadHistory()
-    refreshState()
-    refreshModels()
-    refreshStats()
-    refreshSessions()
-    loadCommands()
-    inputEl?.focus()
+  let eventSource = null
+  function reconnectEvents() {
+    eventSource?.close()
     const es = new EventSource('/events')
+    eventSource = es
     // Retry on (re)connect: covers page loads while the server was down
     // and picks up new extensions/prompts after a server restart.
     es.onopen = () => loadCommands()
@@ -648,7 +744,13 @@
       }
     }
     es.onerror = (e) => console.error('SSE error', e)
-    return () => es.close()
+  }
+
+  onMount(() => {
+    reinit() // also shows the project README in the file viewer, if present
+    reconnectEvents()
+    inputEl?.focus()
+    return () => eventSource?.close()
   })
 
   function onKeydown(e) {
@@ -674,9 +776,15 @@
    <div class="chatcol">
     <div class="toolbar">
       <select bind:value={theme} title="Theme">
-        <option value="dark">🌙 dark</option>
-        <option value="light">☀️ light</option>
+        <option value="dark">dark</option>
+        <option value="light">light</option>
       </select>
+      <select value={currentProjectId} onchange={onProjectChange} title="Project">
+        {#each projects as p (p.id)}
+          <option value={p.id}>{p.name}</option>
+        {/each}
+      </select>
+      <button onclick={() => (showNewProject = !showNewProject)} title="New project">＋</button>
       <select value={currentModel ? `${currentModel.provider}::${currentModel.id}` : ''} onchange={onModelChange}>
         {#each models as m}
           <option value={`${m.provider}::${m.id}`} selected={currentModel && m.provider === currentModel.provider && m.id === currentModel.id}>
@@ -704,6 +812,18 @@
       {/if}
       <button onclick={newSession}>New</button>
     </div>
+  {#if showNewProject}
+    <div class="newproject" oninput={pokeNewProjectTimer} onfocusin={pokeNewProjectTimer}>
+      <input
+        type="text"
+        bind:value={newProjectPath}
+        placeholder="directory (existing = register, new = create)"
+        onkeydown={(e) => e.key === 'Enter' && createProject()}
+      />
+      <label><input type="checkbox" bind:checked={newProjectGit} /> git init</label>
+      <button onclick={createProject} disabled={!newProjectPath.trim()}>Create</button>
+    </div>
+  {/if}
   <div class="chat" bind:this={chatEl}>
     {#if entries.length === 0}
       <div class="chat-empty" aria-hidden="true">
@@ -809,6 +929,7 @@
     <textarea
       bind:this={inputEl}
       bind:value={input}
+      onfocus={() => (showNewProject = false)}
       onkeydown={onKeydown}
       placeholder={streaming ? 'Agent is working…' : 'Prompt pi… (Enter to send, Shift+Enter for newline)'}
       rows="2"
