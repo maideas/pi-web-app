@@ -514,6 +514,9 @@ select {
   font-size: 1rem;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* explicit height so buttons (add/new/up/download) can match it */
+  height: 2rem;
+  box-sizing: border-box;
 }
 
 /* Fixed width so an empty session list (new project) doesn't resize
@@ -636,6 +639,10 @@ select.sessionselect {
   color: var(--accent-fg);
   border: none;
   cursor: pointer;
+  /* same height as the toolbar buttons */
+  height: 2rem;
+  box-sizing: border-box;
+  line-height: 1;
 }
 
 .dirlist {
@@ -716,6 +723,12 @@ select.sessionselect {
   border-radius: 8px;
   padding: 0.4rem 1rem;
   font-size: 1rem;
+  /* same height as the toolbar buttons */
+  height: 2rem;
+  box-sizing: border-box;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 
 :root[data-theme] pre.filecontent {

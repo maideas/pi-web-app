@@ -843,7 +843,7 @@
           <option value={p.id}>{p.name}</option>
         {/each}
       </select>
-      <button onclick={toggleNewProject} title="New project">Add</button>
+      <button onclick={toggleNewProject} title="New project">add</button>
       </div>
       <div class="tgroup">
       <select value={currentModel ? `${currentModel.provider}::${currentModel.id}` : ''} onchange={onModelChange}>
@@ -870,7 +870,7 @@
           </option>
         {/each}
       </select>
-      <button onclick={newSession}>New</button>
+      <button onclick={newSession}>new</button>
       </div>
     </div>
   {#if showNewProject}
@@ -885,7 +885,7 @@
         </div>
         <div class="np-path">
           {#if npParent !== null}
-            <button class="up" onclick={() => browseDirs(npParent)}>← up</button>
+            <button class="up" onclick={() => browseDirs(npParent)}>up</button>
           {/if}
           <span title={npFullPath()}>{npBase}/{npPath}</span>
         </div>
@@ -1049,7 +1049,7 @@
     <div class="browser">
       <div class="browser-path">
         {#if browserParent !== null}
-          <button class="up" onclick={() => browse(browserParent)}>← up</button>
+          <button class="up" onclick={() => browse(browserParent)}>up</button>
         {/if}
         <span>/{browserPath}</span>
       </div>
@@ -1067,7 +1067,7 @@
       {#if selectedFile}
         <div class="viewer-head">
           <span class="fname">{selectedFile.path}</span>
-          <a class="dl" href={`/download/${selectedFile.path}`} download>⬇ download</a>
+          <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
         </div>
         {#if selectedFile.text !== null}
           <pre class="filecontent hljs"><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>
