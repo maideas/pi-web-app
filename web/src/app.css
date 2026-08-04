@@ -22,6 +22,10 @@
   --ok: #3fa659;
   --err: #e05252;
   --danger: #7f2b2b;
+  --warn-fg: #e3b341; /* bright yellow, legible on --panel */
+  --warn-border: #bf8700;
+  --important-fg: #a371f7; /* GitHub dark 'done' purples */
+  --important-border: #8957e5;
 }
 
 :root[data-theme='light'] {
@@ -48,6 +52,10 @@
   --ok: #1A8C4A;
   --err: #C41E3A;
   --danger: #A31B1B;
+  --warn-fg: #a07500; /* yellow-amber, still ~4.2:1 on --panel */
+  --warn-border: #e3b341;
+  --important-fg: #8250df; /* GitHub light 'done' purple */
+  --important-border: #8250df;
 }
 
 /* Claude theme: the light theme with the warm Claude look — cream
@@ -76,6 +84,10 @@
   --ok: #3E7C4F;
   --err: #B54334;
   --danger: #96352A;
+  --warn-fg: #a07500;
+  --warn-border: #e3b341;
+  --important-fg: #8250df;
+  --important-border: #8250df;
 }
 
 /* Serif headings in chat, as in the reference screenshots */
@@ -480,6 +492,74 @@ aside {
 
 .md p {
   margin: 0.4em 0;
+}
+
+/* GitHub-style alerts (> [!NOTE] ...), rendered by the marked extension in
+   App.svelte. Structure mirrors md-to-html-renderer's markdown.css; colours
+   map its semantic tokens onto the app variables:
+   note -> accent/link, tip -> ok, important -> accent(-bright),
+   warning -> sys, caution -> danger/err. */
+.md .markdown-alert {
+  padding: 0.5rem 1rem;
+  margin: 0.4em 0;
+  border-left: 0.25em solid var(--border);
+}
+
+.md .markdown-alert > :first-child {
+  margin-top: 0;
+}
+
+.md .markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+
+.md .markdown-alert-title {
+  display: flex;
+  align-items: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  margin-bottom: 0.4em;
+}
+
+.md .markdown-alert-title .octicon {
+  margin-right: 0.5em;
+  fill: currentColor;
+}
+
+.md .markdown-alert-note {
+  border-left-color: var(--link);
+}
+.md .markdown-alert-note .markdown-alert-title {
+  color: var(--link);
+}
+
+.md .markdown-alert-tip {
+  border-left-color: var(--ok);
+}
+.md .markdown-alert-tip .markdown-alert-title {
+  color: var(--ok);
+}
+
+.md .markdown-alert-important {
+  border-left-color: var(--important-border, var(--accent));
+}
+.md .markdown-alert-important .markdown-alert-title {
+  color: var(--important-fg, var(--accent));
+}
+
+.md .markdown-alert-warning {
+  border-left-color: var(--warn-border, var(--sys-border));
+}
+.md .markdown-alert-warning .markdown-alert-title {
+  color: var(--warn-fg, var(--sys-fg));
+}
+
+.md .markdown-alert-caution {
+  border-left-color: var(--danger);
+}
+.md .markdown-alert-caution .markdown-alert-title {
+  color: var(--err);
 }
 
 /* Markdown tables (.md covers chat and the file viewer): full width,
