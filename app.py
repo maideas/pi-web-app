@@ -472,6 +472,75 @@ def api_dirs():
     )
 
 
+@app.route("/api/auto_name", methods=["POST"])
+def auto_name():
+    """Name the current session from its content via a one-shot model call.
+
+    Without {"force": true} this only names sessions that have no display
+    name yet (the frontend calls it after run ends) — an existing name,
+    whether generated or set manually, is never overwritten without an
+    explicit request. Content threshold: first user message >= 20 chars
+    plus an assistant reply. No-ops return success=false with a reason.
+    """
+    body = request.get_json(force=True, silent=True)
+    force = isinstance(body, dict) and bool(body.get("force"))
+    p = pi()
+    state = p.rpc_request({"type": "get_state"})
+    if not state.get("success"):
+        return jsonify({"success": False, "error": "no state"})
+    data = state.get("data", {})
+    current_name = data.get("sessionName")
+    if current_name and not force:
+        return jsonify({"success": False, "error": "already named", "name": current_name})
+
+    msgs = p.rpc_request({"type": "get_messages"})
+
+    def text_of(m: dict) -> str:
+        c = m.get("content")
+        if isinstance(c, str):
+            return c
+        return " ".join(part.get("text", "") for part in (c or []) if part.get("type") == "text")
+
+    messages = msgs.get("data", {}).get("messages", []) if msgs.get("success") else []
+    # Skip textless messages: a turn can be thinking + tool calls only.
+    user_texts = [t for m in messages if m.get("role") == "user" if (t := text_of(m)).strip()]
+    asst_texts = [t for m in messages if m.get("role") == "assistant" if (t := text_of(m)).strip()]
+    if not user_texts or len(user_texts[0].strip()) < 20 or not asst_texts:
+        return jsonify({"success": False, "error": "not enough content"})
+
+    # Title from the whole conversation: every user message, truncated
+    # (user requests drive the topic), plus the first and latest
+    # assistant replies (assistant text is bulky, so it is not included
+    # in full — that would blow up the prompt for a six-word title).
+    digest = f"User: {user_texts[0][:400]}\nAssistant: {asst_texts[0][:300]}"
+    if len(user_texts) > 1:
+        digest += "\n...\n" + "\n".join(f"User: {t[:120]}" for t in user_texts[1:])
+        digest += f"\nAssistant (latest): {asst_texts[-1][:300]}"
+    prompt = (
+        "Give this chat session a short, meaningful title (at most 6 words) "
+        "covering the whole conversation, not just the latest request. "
+        "Reply with the title only: no quotes, no trailing punctuation, no explanation.\n\n"
+        + digest
+    )
+    model = data.get("model") or {}
+    cmd = ["pi", "--print", "--no-session", "--no-tools"]
+    if model.get("provider") and model.get("id"):
+        cmd += ["--provider", model["provider"], "--model", model["id"]]
+    cmd.append(prompt)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return jsonify({"success": False, "error": f"naming call failed: {exc}"})
+    first_line = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
+    name = first_line.strip().strip('"\'*').rstrip(".!")[:60]
+    if not name:
+        return jsonify({"success": False, "error": "empty name"})
+    resp = p.rpc_request({"type": "set_session_name", "name": name})
+    return jsonify(
+        {"success": bool(resp.get("success")), "name": name, "previous": current_name or None}
+    )
+
+
 @app.route("/api/projects")
 def list_projects():
     return jsonify(

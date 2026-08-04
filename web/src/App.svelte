@@ -155,6 +155,7 @@
     { name: 'abort', description: 'Stop the current run' },
     { name: 'compact', description: 'Compact context (optional instructions)' },
     { name: 'name', description: 'Set session display name' },
+    { name: 'rename', description: 'Generate a session name from the chat content' },
     { name: 'export', description: 'Export session to HTML' },
   ]
   let slashCommands = $state([]) // [{ name, description, source }]
@@ -225,6 +226,7 @@
   // highlight.js pipeline as the chat, so both look identical.
   const isMarkdown = (path) => /\.md|\.markdown$/i.test(path ?? '')
   let toolsUsedInRun = $state(false)
+  let autoNaming = $state(false)
 
   async function browse(path) {
     const resp = await apiGet(`/api/list?path=${encodeURIComponent(path)}`)
@@ -741,6 +743,7 @@
         streaming = false
         refreshStatsDebounced()
         refreshSessions() // pick up new session files / reordered mtimes
+        maybeAutoName() // name the session once enough content exists
         if (toolsUsedInRun) {
           // Consumed on the first of agent_end/agent_settled; the second is a no-op.
           toolsUsedInRun = false
@@ -858,6 +861,9 @@
         else entries.push({ role: 'system', text: `⚠️ ${r.error ?? 'failed to set name'}` })
         return
       }
+      case 'rename':
+        await maybeAutoName(true)
+        return
       case 'export': {
         const r = await apiPost('/export_html')
         entries.push({
@@ -916,6 +922,30 @@
     const data = await apiPost('/prompt', body)
     if (!data.success) {
       entries.push({ role: 'assistant', text: `⚠️ ${data.error ?? 'prompt rejected'}` })
+    }
+  }
+
+  // Auto-name the session from its content after a run ends; the
+  // backend only names sessions that don't have a name yet (an existing
+  // name is never overwritten automatically). force=true regenerates on
+  // explicit user request (/rename).
+  async function maybeAutoName(force = false) {
+    if (!force && autoNaming) return
+    autoNaming = true
+    try {
+      const r = await apiPost('/api/auto_name', force ? { force: true } : {})
+    if (r.success && r.name) {
+      entries.push({
+        role: 'system',
+        text: r.previous ? `🏷 session renamed to “${r.name}”` : `🏷 session named “${r.name}”`,
+      })
+      scrollToBottom()
+      await refreshSessions()
+    } else if (force) {
+      entries.push({ role: 'system', text: `⚠️ rename failed: ${r.error ?? 'unknown error'}` })
+    }
+    } finally {
+      autoNaming = false
     }
   }
 

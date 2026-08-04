@@ -20,9 +20,13 @@ Features:
   `projects.json`. On startup the most recently opened project and its
   latest session are restored automatically, and the viewer reopens the
   file last viewed in that project (`lastFile`, README.md as fallback)
-- Session management: list, switch, create, and name sessions
+- Session management: list, switch, create, and name sessions;
+  sessions are auto-named from the chat content (one-shot model call)
+  once a run has produced enough text; after that the name is kept —
+  regenerate it on request with `/rename` (considers user and assistant
+  messages)
 - Slash commands with autocomplete: `/new`, `/abort`, `/compact`, `/name`,
-  `/export` are mapped to their RPC equivalents; extension commands, prompt
+  `/rename`, `/export` are mapped to their RPC equivalents; extension commands, prompt
   templates, and skills (as reported by pi's `get_commands`) are forwarded;
   unrecognized TUI-only commands are blocked with a hint
 - Project file browser with preview and download; auto-refreshes after
@@ -111,9 +115,14 @@ Sessions and slash commands:
 | `/commands` | GET | Slash commands invocable via prompt (pi `get_commands`) |
 | `/compact` | POST | Compact context; optional `customInstructions` |
 | `/set_session_name` | POST | Set session display name |
+| `/api/auto_name` | POST | Name the session from its content via a one-shot pi call (no-op if already named or too little content; `force: true` regenerates) |
 | `/export_html` | POST | Export session to an HTML file |
 | `/ui-response` | POST | Relay extension UI dialog responses to pi |
 
+Projects:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
 Projects:
 
 | Endpoint | Method | Purpose |

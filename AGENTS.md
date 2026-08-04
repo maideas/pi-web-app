@@ -47,7 +47,7 @@ frontend notes.
   entry (empty name = explicitly cleared). The `/sessions` endpoint in
   [app.py](app.py) does this — don't "simplify" it back to reading the
   header.
-- `/name`, `/new`, `/abort`, `/compact`, `/export` are intercepted by
+- `/name`, `/rename`, `/new`, `/abort`, `/compact`, `/export` are intercepted by
   the frontend and mapped to RPC calls; other pi TUI commands don't
   exist in RPC mode and are blocked with a hint.
 
