@@ -352,6 +352,38 @@
     return entries.findLast((e) => e.role === 'assistant') ?? null
   }
 
+  // Message navigator: the dots in the gap between chat and file panes.
+  // Hovering opens a centered popup with (truncated) user messages;
+  // clicking one scrolls the chat to it. The popup closes when the
+  // mouse leaves it, or shortly after leaving the dots unless the popup
+  // is reached in time.
+  let showMsgNav = $state(false)
+  let msgNavTimer = null
+  const userMessages = $derived(entries.map((e, i) => ({ e, i })).filter((x) => x.e.role === 'user'))
+
+  function openMsgNav() {
+    clearTimeout(msgNavTimer)
+    showMsgNav = true
+  }
+  function scheduleCloseMsgNav() {
+    clearTimeout(msgNavTimer)
+    msgNavTimer = setTimeout(() => (showMsgNav = false), 200)
+  }
+  function closeMsgNav() {
+    clearTimeout(msgNavTimer)
+    showMsgNav = false
+  }
+  function jumpToMessage(i) {
+    closeMsgNav()
+    document
+      .querySelector(`.msg.user[data-idx="${i}"]`)
+      ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+  function truncate(text, n = 80) {
+    const t = (text ?? '').replace(/\s+/g, ' ').trim()
+    return t.length > n ? t.slice(0, n) + '…' : t
+  }
+
   async function apiGet(url) {
     try {
       const r = await fetch(url)
@@ -1144,11 +1176,11 @@
         <div class="chat-empty-text">pi agent web UI</div>
       </div>
     {/if}
-    {#each entries as entry}
+    {#each entries as entry, i}
       {#if entry.role === 'system'}
         <div class="msg system">{entry.text}</div>
       {:else if entry.role === 'user'}
-        <div class="msg user">
+        <div class="msg user" data-idx={i}>
           {entry.text}
           {#if entry.images?.length}
             <div class="imgs">
@@ -1249,6 +1281,20 @@
     {/if}
   </div>
    </div>
+
+   <button class="gap-dots" aria-label="Jump to one of your messages" onmouseenter={openMsgNav} onmouseleave={scheduleCloseMsgNav} onfocus={openMsgNav} onblur={scheduleCloseMsgNav} onclick={openMsgNav}>
+    <span></span><span></span><span></span>
+   </button>
+
+   {#if showMsgNav}
+    <div class="msgnav-popup" role="dialog" aria-label="Your messages" tabindex="-1" onmouseenter={openMsgNav} onmouseleave={closeMsgNav}>
+      {#each userMessages as { e, i } (i)}
+        <button class="msgnav-item" onclick={() => jumpToMessage(i)} title={e.text}>{truncate(e.text)}</button>
+      {:else}
+        <div class="msgnav-empty">No messages yet.</div>
+      {/each}
+    </div>
+   {/if}
 
    <aside>
     <div class="browser">
