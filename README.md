@@ -18,7 +18,8 @@ Features:
   between them (pi respawns with the project dir as cwd), and detach
   them again (registry only; the directory stays on disk); registry in
   `projects.json`. On startup the most recently opened project and its
-  latest session are restored automatically
+  latest session are restored automatically, and the viewer reopens the
+  file last viewed in that project (`lastFile`, README.md as fallback)
 - Session management: list, switch, create, and name sessions
 - Slash commands with autocomplete: `/new`, `/abort`, `/compact`, `/name`,
   `/export` are mapped to their RPC equivalents; extension commands, prompt
@@ -122,6 +123,7 @@ Projects:
 | `/api/projects` | POST | Register an existing directory or create a new one (`path`, optional `gitInit`); the project name is the leaf directory name |
 | `/api/projects/<id>/open` | POST | Switch the active project: respawn pi with the project dir as cwd |
 | `/api/projects/<id>/detach` | POST | Remove a project from the registry (directory stays on disk; refuses the current project) |
+| `/api/projects/<id>/last-file` | POST | Remember the project's open viewer file (`lastFile`) |
 
 File browser and static hosting:
 

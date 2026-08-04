@@ -558,6 +558,26 @@ def open_project(pid):
     return jsonify({"success": True, "project": entry})
 
 
+@app.route("/api/projects/<pid>/last-file", methods=["POST"])
+def set_last_file(pid):
+    """Remember the file currently open in the viewer for a project.
+
+    Stored as `lastFile` in the registry; the frontend restores it when
+    the project is opened (falling back to README.md).
+    """
+    body = request.get_json(force=True, silent=True)
+    if not isinstance(body, dict) or not isinstance(body.get("path"), str):
+        return jsonify({"success": False, "error": "missing path"}), 400
+    with switch_lock:
+        projects = load_projects()
+        entry = next((p for p in projects if p["id"] == pid), None)
+        if entry is None:
+            return jsonify({"success": False, "error": "unknown project"}), 404
+        entry["lastFile"] = body["path"]
+        save_projects(projects)
+    return jsonify({"success": True})
+
+
 @app.route("/api/projects/<pid>/detach", methods=["POST"])
 def detach_project(pid):
     """Remove a project from the registry (the directory stays on disk).

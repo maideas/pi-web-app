@@ -121,9 +121,10 @@ per-tab becomes interesting.
 2. Parallel or serial? → **Serial (model A).** All pi I/O goes through
    a `PiProcess` wrapper class in [app.py](app.py), so a process pool
    (model B) can slot in later without reworking the endpoints.
-3. How much metadata? → **Minimal:** `{id, name, path, created}`.
-   Activity info can be derived from session-file mtimes later; skip
-   tags/templates until they hurt.
+3. How much metadata? → **Minimal:** `{id, name, path, created}` plus
+   `lastOpened` (set on every switch, drives startup restore) and
+   `lastFile` (the file open in the viewer, restored on project open).
+   Skip tags/templates until they hurt.
 4. Should the app itself remain a project? → **Yes.** The registry is
    seeded with the app's own directory as the default project on first
    run.

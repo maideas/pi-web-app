@@ -252,6 +252,7 @@
     const f = await apiGet(`/api/file?path=${encodeURIComponent(path)}`)
     if (f.path && !f.error) {
       selectedFile = f
+      rememberFile(path)
       // Sync the directory browser to the file's location (the selected
       // entry is highlighted via selectedFile.path).
       await browse(path.split('/').slice(0, -1).join('/'))
@@ -286,12 +287,21 @@
     openLinkedFile(normalizePath(base ? `${base}/${pathPart}` : pathPart))
   }
 
+  // Remember the open viewer file per project (registry: lastFile);
+  // reinit restores it when the project is opened.
+  function rememberFile(path) {
+    if (currentProjectId && path) {
+      apiPost(`/api/projects/${currentProjectId}/last-file`, { path })
+    }
+  }
+
   async function selectEntry(e) {
     if (e.dir) {
       selectedFile = null
       await browse(e.path)
     } else {
       selectedFile = await apiGet(`/api/file?path=${encodeURIComponent(e.path)}`)
+      rememberFile(e.path)
     }
   }
 
@@ -481,9 +491,6 @@
     selectedFile = null
     toolsUsedInRun = false
     await browse('')
-    apiGet('/api/file?path=README.md').then((r) => {
-      if (r.path && !r.error) selectedFile = r
-    })
     await loadHistory()
     await Promise.all([
       refreshState(),
@@ -493,6 +500,18 @@
       loadCommands(),
       loadProjects(),
     ])
+    // Restore the project's remembered viewer file, README as fallback.
+    const remembered = projects.find((p) => p.current)?.lastFile ?? 'README.md'
+    let f = await apiGet(`/api/file?path=${encodeURIComponent(remembered)}`)
+    if ((!f.path || f.error) && remembered !== 'README.md') {
+      f = await apiGet('/api/file?path=README.md')
+    }
+    if (f.path && !f.error) {
+      selectedFile = f
+      // Show the file's directory in the browser (also highlights it).
+      const dir = f.path.split('/').slice(0, -1).join('/')
+      if (dir) await browse(dir)
+    }
   }
 
   async function switchProject(id) {
