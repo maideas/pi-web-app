@@ -185,6 +185,37 @@
   let attachments = $state([])
 
   // File browser / viewer
+  // Fades soften the hard cut-off at the top/bottom edges of the file
+  // viewer and the directory list: shown only where content is actually
+  // scrolled out of view.
+  let fadeTop = $state(false)
+  let fadeBottom = $state(false)
+  let dirFadeTop = $state(false)
+  let dirFadeBottom = $state(false)
+  let chatFadeTop = $state(false)
+  let chatFadeBottom = $state(false)
+  function fadesFor(selector) {
+    const el = document.querySelector(selector)
+    if (!el) return { top: false, bottom: false }
+    return {
+      top: el.scrollTop > 8,
+      bottom: el.scrollHeight - el.scrollTop - el.clientHeight > 8,
+    }
+  }
+  function updateFades() {
+    ;({ top: fadeTop, bottom: fadeBottom } = fadesFor('.viewer-body .filecontent'))
+    ;({ top: dirFadeTop, bottom: dirFadeBottom } = fadesFor('.browser-body .dirlist'))
+    ;({ top: chatFadeTop, bottom: chatFadeBottom } = fadesFor('.chat-body .chat'))
+  }
+
+  // Recompute once new content has rendered.
+  $effect(() => {
+    selectedFile // track
+    dirEntries // track
+    entries.length // track (chat grows while streaming)
+    tick().then(updateFades)
+  })
+
   let browserPath = $state('')
   let browserParent = $state(null)
   let dirEntries = $state([])
@@ -299,23 +330,21 @@
     return marked.parse(text ?? '', { async: false })
   }
 
-  // Auto-scroll only when the user is already at (near) the bottom:
-  // scrolling up while the agent works stops the snapping, scrolling
-  // back to the bottom re-enables it.
-  let stickToBottom = true
-  function onChatScroll() {
-    if (!chatEl) return
-    stickToBottom = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 40
-  }
-
+  // Auto-scroll keeps up with streaming only while the user is at (near)
+  // the bottom; scrolling up stops it, scrolling back down resumes it.
+  // The position is measured synchronously at call time — before the
+  // pending DOM update grows scrollHeight — so growth without scroll
+  // events can never corrupt the decision (a scroll-event flag could).
   let scrollQueued = false
-  async function scrollToBottom() {
-    if (scrollQueued) return
+  async function scrollToBottom(force = false) {
+    if (scrollQueued || !chatEl) return
+    const stick = force || chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 40
+    if (!stick) return
     scrollQueued = true
     requestAnimationFrame(async () => {
       scrollQueued = false
       await tick()
-      if (chatEl && stickToBottom) chatEl.scrollTop = chatEl.scrollHeight
+      if (chatEl) chatEl.scrollTop = chatEl.scrollHeight
     })
   }
 
@@ -417,7 +446,6 @@
   async function reinit() {
     entries = []
     attachments = []
-    stickToBottom = true // fresh content: start at the end
     selectedFile = null
     toolsUsedInRun = false
     await browse('')
@@ -812,7 +840,7 @@
     if (trimmed.startsWith('/')) {
       input = ''
       await handleSlashCommand(trimmed)
-      scrollToBottom()
+      scrollToBottom(true) // explicit command: jump to the end
       return
     }
     const textAttachments = attachments.filter((a) => a.kind === 'text')
@@ -830,8 +858,7 @@
     })
     input = ''
     attachments = []
-    stickToBottom = true // sending is an explicit jump to the end
-    scrollToBottom()
+    scrollToBottom(true) // sending is an explicit jump to the end
     const body = { message }
     if (images.length) body.images = images
     if (streaming) body.streamingBehavior = 'steer'
@@ -879,7 +906,7 @@
         })
       }
     }
-    scrollToBottom()
+    scrollToBottom(true) // history (re)load: start at the end
   }
 
   async function loadCommands() {
@@ -1086,7 +1113,10 @@
       </div>
     </div>
   {/if}
-  <div class="chat" bind:this={chatEl} onscroll={onChatScroll}>
+  <div class="chat-body" onscrollcapture={updateFades}>
+    <div class="fade fade-top" class:visible={chatFadeTop}></div>
+    <div class="fade fade-bottom" class:visible={chatFadeBottom}></div>
+  <div class="chat" bind:this={chatEl}>
     {#if entries.length === 0}
       <div class="chat-empty" aria-hidden="true">
         <svg class="logo" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
@@ -1153,6 +1183,7 @@
     {#if streaming && !currentAssistant()}
       <div class="msg assistant thinking">thinking…</div>
     {/if}
+  </div>
   </div>
 
   {#if attachments.length}
@@ -1224,20 +1255,24 @@
       <div class="browser-path">
         <span>/{browserPath}</span>
       </div>
-      <div class="dirlist">
-        {#if browserParent !== null}
-          <button class="direntry" onclick={() => browse(browserParent)}>
-            <span class="icon">📁</span>
-            <span class="name">..</span>
-          </button>
-        {/if}
-        {#each dirEntries as e}
-          <button class="direntry" class:selected={selectedFile?.path === e.path} onclick={() => selectEntry(e)}>
-            <span class="icon">{e.dir ? '📁' : '📄'}</span>
-            <span class="name">{e.name}</span>
-            <span class="size">{fmtSize(e.size)}</span>
-          </button>
-        {/each}
+      <div class="browser-body" onscrollcapture={updateFades}>
+        <div class="fade fade-top" class:visible={dirFadeTop}></div>
+        <div class="fade fade-bottom" class:visible={dirFadeBottom}></div>
+        <div class="dirlist">
+          {#if browserParent !== null}
+            <button class="direntry" onclick={() => browse(browserParent)}>
+              <span class="icon">📁</span>
+              <span class="name">..</span>
+            </button>
+          {/if}
+          {#each dirEntries as e}
+            <button class="direntry" class:selected={selectedFile?.path === e.path} onclick={() => selectEntry(e)}>
+              <span class="icon">{e.dir ? '📁' : '📄'}</span>
+              <span class="name">{e.name}</span>
+              <span class="size">{fmtSize(e.size)}</span>
+            </button>
+          {/each}
+        </div>
       </div>
     </div>
     <div class="viewer">
@@ -1246,18 +1281,24 @@
           <span class="fname">{selectedFile.path}</span>
           <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
         </div>
-        {#if selectedFile.text !== null && isMarkdown(selectedFile.path)}
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="filecontent md" onclick={onMdClick}>{@html renderMarkdown(selectedFile.text)}</div>
-        {:else if selectedFile.text !== null}
-          <pre class="filecontent hljs"><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>
-        {:else}
-          <div class="filecontent binary">No preview ({selectedFile.reason}) — use download.</div>
-        {/if}
-      {:else}
-        <div class="filecontent placeholder">Select a file to preview it here.</div>
       {/if}
+      <div class="viewer-body" onscrollcapture={updateFades}>
+        <div class="fade fade-top" class:visible={fadeTop}></div>
+        <div class="fade fade-bottom" class:visible={fadeBottom}></div>
+        {#if selectedFile}
+          {#if selectedFile.text !== null && isMarkdown(selectedFile.path)}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="filecontent md" onclick={onMdClick}>{@html renderMarkdown(selectedFile.text)}</div>
+          {:else if selectedFile.text !== null}
+            <pre class="filecontent hljs"><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>
+          {:else}
+            <div class="filecontent binary">No preview ({selectedFile.reason}) — use download.</div>
+          {/if}
+        {:else}
+          <div class="filecontent placeholder">Select a file to preview it here.</div>
+        {/if}
+      </div>
     </div>
    </aside>
   </div>
