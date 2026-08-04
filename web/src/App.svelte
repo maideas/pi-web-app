@@ -29,9 +29,6 @@
     document.documentElement.dataset.theme = variant ? 'light' : theme
     if (variant) document.documentElement.dataset.contrast = variant
     else delete document.documentElement.dataset.contrast
-    // The markdown preview ships both palettes; pick explicitly (with
-    // several palettes loaded, the implicit default is ambiguous).
-    document.documentElement.dataset.palette = variant === 'claude' ? 'claude' : 'pi-web-app'
     localStorage.setItem('theme', theme)
   })
 
@@ -168,24 +165,11 @@
   let browserPath = $state('')
   let browserParent = $state(null)
   let dirEntries = $state([])
-  let selectedFile = $state(null) // { path, text, html, reason }
+  let selectedFile = $state(null) // { path, text, reason }
 
-  // Markdown previews come as rendered HTML from the backend; their
-  // stylesheet (md-to-html-renderer, pi-web-app palette) is injected once.
-  let mdCssLoaded = false
-  async function ensureMdCss() {
-    if (mdCssLoaded) return
-    mdCssLoaded = true
-    try {
-      const css = await (await fetch('/api/markdown_css')).text()
-      const style = document.createElement('style')
-      style.textContent = css
-      document.head.appendChild(style)
-    } catch (err) {
-      mdCssLoaded = false
-      console.error('markdown css', err)
-    }
-  }
+  // Markdown files are rendered in the viewer with the same marked +
+  // highlight.js pipeline as the chat, so both look identical.
+  const isMarkdown = (path) => /\.md|\.markdown$/i.test(path ?? '')
   let toolsUsedInRun = $state(false)
 
   async function browse(path) {
@@ -214,7 +198,6 @@
     const f = await apiGet(`/api/file?path=${encodeURIComponent(path)}`)
     if (f.path && !f.error) {
       selectedFile = f
-      if (f.html) ensureMdCss()
       // Sync the directory browser to the file's location (the selected
       // entry is highlighted via selectedFile.path).
       await browse(path.split('/').slice(0, -1).join('/'))
@@ -255,7 +238,6 @@
       await browse(e.path)
     } else {
       selectedFile = await apiGet(`/api/file?path=${encodeURIComponent(e.path)}`)
-      if (selectedFile.html) ensureMdCss()
     }
   }
 
@@ -407,10 +389,7 @@
     toolsUsedInRun = false
     await browse('')
     apiGet('/api/file?path=README.md').then((r) => {
-      if (r.path && !r.error) {
-        selectedFile = r
-        if (r.html) ensureMdCss()
-      }
+      if (r.path && !r.error) selectedFile = r
     })
     await loadHistory()
     await Promise.all([
@@ -1116,7 +1095,7 @@
           {/if}
         </div>
       {:else if entry.role === 'assistant'}
-        <div class="msg assistant">
+        <div class="msg assistant md">
           {#if entry.thinking}
             <details class="thinking-block" open>
               <summary>thinking</summary>
@@ -1233,10 +1212,10 @@
           <span class="fname">{selectedFile.path}</span>
           <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
         </div>
-        {#if selectedFile.html}
+        {#if selectedFile.text !== null && isMarkdown(selectedFile.path)}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="filecontent md" onclick={onMdClick}>{@html selectedFile.html}</div>
+          <div class="filecontent md" onclick={onMdClick}>{@html renderMarkdown(selectedFile.text)}</div>
         {:else if selectedFile.text !== null}
           <pre class="filecontent hljs"><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>
         {:else}

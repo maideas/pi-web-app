@@ -14,7 +14,7 @@
   --muted: #888;
   --muted2: #777;
   --status-fg: #a5a5ad;
-  --link: #4493f8; /* github palette (md-to-html-renderer) dark link */
+  --link: #4493f8; /* GitHub's dark-mode link color */
   --input-border: #444;
   --sys-bg: #3a2a1a;
   --sys-border: #7f5a2b;
@@ -40,7 +40,7 @@
   --muted: #8A8580;
   --muted2: #B5B0AA;
   --status-fg: #8A8580;
-  --link: #0969da; /* github palette (md-to-html-renderer) light link */
+  --link: #0969da; /* GitHub's light-mode link color */
   --input-border: #D9D5D0;
   --sys-bg: #FFF8E7;
   --sys-border: #E5C97B;
@@ -79,24 +79,24 @@
 }
 
 /* Serif headings in chat, as in the reference screenshots */
-:root[data-theme='light'][data-contrast='claude'] .msg.assistant h1,
-:root[data-theme='light'][data-contrast='claude'] .msg.assistant h2,
-:root[data-theme='light'][data-contrast='claude'] .msg.assistant h3,
-:root[data-theme='light'][data-contrast='claude'] .msg.assistant h4,
-:root[data-theme='light'][data-contrast='claude'] .msg.assistant h5,
-:root[data-theme='light'][data-contrast='claude'] .msg.assistant h6 {
+:root[data-theme='light'][data-contrast='claude'] .md h1,
+:root[data-theme='light'][data-contrast='claude'] .md h2,
+:root[data-theme='light'][data-contrast='claude'] .md h3,
+:root[data-theme='light'][data-contrast='claude'] .md h4,
+:root[data-theme='light'][data-contrast='claude'] .md h5,
+:root[data-theme='light'][data-contrast='claude'] .md h6 {
   font-family: ui-serif, Georgia, 'Times New Roman', serif;
 }
 
 /* Rust inline code on a warm pill (code blocks keep --code-bg) */
-:root[data-theme='light'][data-contrast='claude'] .msg.assistant code {
+:root[data-theme='light'][data-contrast='claude'] .md code {
   color: #B4552D;
   background: var(--code-bg);
   border-radius: 4px;
   padding: 0.1em 0.3em;
 }
 
-:root[data-theme='light'][data-contrast='claude'] .msg.assistant pre code {
+:root[data-theme='light'][data-contrast='claude'] .md pre code {
   color: inherit;
   background: transparent;
   padding: 0;
@@ -431,7 +431,7 @@ aside {
   background: var(--bg);
 }
 
-.msg.assistant pre {
+.md pre {
   background: var(--code-bg);
   padding: 0.6rem;
   border: 1px solid var(--border);
@@ -440,7 +440,7 @@ aside {
 }
 
 /* Language hint above fenced code blocks (from the fence info string) */
-.msg.assistant pre[data-lang]::before {
+.md pre[data-lang]::before {
   content: attr(data-lang);
   display: block;
   font-family: system-ui, sans-serif;
@@ -449,55 +449,55 @@ aside {
   margin-bottom: 0.55rem; /* breathing room between label and code */
 }
 
-.msg.assistant code {
+.md code {
   font-family: ui-monospace, monospace;
   font-size: 0.9em;
 }
 
-.msg.assistant pre code.hljs {
+.md pre code.hljs {
   background: transparent;
   padding: 0;
   font-family: ui-monospace, monospace;
   font-size: 0.9em;
 }
 
-.msg.assistant h1,
-.msg.assistant h2,
-.msg.assistant h3,
-.msg.assistant h4,
-.msg.assistant h5,
-.msg.assistant h6 {
+.md h1,
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
   margin: 1em 0 0.5em; /* more air around headings for readability */
   line-height: 1.3;
 }
 
-.msg.assistant h1 { font-size: 1.4rem; }
-.msg.assistant h2 { font-size: 1.2rem; }
-.msg.assistant h3 { font-size: 1.1rem; }
-.msg.assistant h4 { font-size: 1rem; }
-.msg.assistant h5 { font-size: 0.95rem; }
-.msg.assistant h6 { font-size: 0.9rem; }
+.md h1 { font-size: 1.4rem; }
+.md h2 { font-size: 1.2rem; }
+.md h3 { font-size: 1.1rem; }
+.md h4 { font-size: 1rem; }
+.md h5 { font-size: 0.95rem; }
+.md h6 { font-size: 0.9rem; }
 
-.msg.assistant p {
+.md p {
   margin: 0.4em 0;
 }
 
-/* Chat tables: full message width, horizontal row lines only,
-   left-aligned headers — like the md-to-html-renderer output */
-.msg.assistant table {
+/* Markdown tables (.md covers chat and the file viewer): full width,
+   horizontal row lines only, left-aligned headers */
+.md table {
   width: 100%;
   border-collapse: collapse;
   margin: 0.5em 0;
 }
 
-.msg.assistant th,
-.msg.assistant td {
+.md th,
+.md td {
   text-align: left;
   padding: 6px 13px;
   border-bottom: 1px solid var(--input-border); /* more visible than --border */
 }
 
-.msg.assistant thead th {
+.md thead th {
   font-weight: 600;
   border-bottom: 2px solid var(--input-border); /* header rule slightly thicker */
 }
@@ -505,7 +505,9 @@ aside {
 /* Chat message links: use the theme link color (also for :visited)
    instead of the browser default blue/purple */
 .msg a,
-.msg a:visited {
+.msg a:visited,
+.md a,
+.md a:visited {
   color: var(--link);
 }
 
@@ -918,10 +920,8 @@ select.sessionselect {
   white-space: pre;
 }
 
-/* Rendered markdown preview (md-to-html-renderer output): let the
-   bundled markdown.css/palette control fonts and colors, but use the
-   app's default background for the container and the markdown body
-   itself (the renderer sets canvas-default on .markdown-body). */
+/* Rendered markdown preview in the file viewer: same .md content
+   styles as the chat, on the app's default background */
 .filecontent.md {
   font-family: inherit;
   white-space: normal;
@@ -929,9 +929,6 @@ select.sessionselect {
   background: var(--bg);
 }
 
-.filecontent.md .markdown-body {
-  background: transparent;
-}
 
 .filecontent.hljs code {
   background: transparent;

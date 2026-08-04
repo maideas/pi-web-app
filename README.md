@@ -25,10 +25,9 @@ Features:
   templates, and skills (as reported by pi's `get_commands`) are forwarded;
   unrecognized TUI-only commands are blocked with a hint
 - Project file browser with preview and download; auto-refreshes after
-  a run that used tools. Markdown files render as styled HTML (via
-  [md-to-html-renderer](https://github.com/maideas/md-to-html-renderer),
-  `pi-web-app` palette, following the app theme), everything else gets
-  syntax-highlighted plain text. Links in rendered markdown are
+  a run that used tools. Markdown files render with the same marked +
+  highlight.js pipeline as the chat (identical look), everything else
+  gets syntax-highlighted plain text. Links in rendered markdown are
   intercepted: relative file links load in the viewer (resolved against
   the file's directory), external links open in a new tab
 - Extension UI dialogs: confirm/select/input requests from pi extensions
@@ -72,7 +71,7 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, highlight.js) |
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
 | [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (first increment implemented) |
-| [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask, md-to-html-renderer from git) |
+| [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask) |
 | [`web/public/`](web/public/) | Static assets (favicon, icons) copied into `dist/` |
 | [`AGENTS.md`](AGENTS.md) | Project conventions for coding agents |
 
@@ -129,8 +128,7 @@ File browser and static hosting:
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/api/list?path=` | GET | List a directory under the project root |
-| `/api/markdown_css` | GET | Stylesheet for rendered markdown previews |
-| `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB); markdown files also return rendered HTML |
+| `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB) |
 | `/download/<path>` | GET | Download a file |
 | `/` | GET | Serve the built SPA from `web/dist/` |
 
