@@ -494,73 +494,55 @@ aside {
   margin: 0.4em 0;
 }
 
-/* GitHub-style alerts (> [!NOTE] ...), rendered by the marked extension in
-   App.svelte. Structure mirrors md-to-html-renderer's markdown.css; colours
-   map its semantic tokens onto the app variables:
-   note -> accent/link, tip -> ok, important -> accent(-bright),
-   warning -> sys, caution -> danger/err. */
+/* Blockquotes (.md covers chat and the file viewer): muted text with
+   an accent bar on the left */
+.md blockquote {
+  margin: 0.5em 0;
+  padding: 0 1em;
+  color: var(--muted);
+  border-left: 0.25em solid var(--input-border);
+}
+
+.md blockquote > :first-child { margin-top: 0; }
+.md blockquote > :last-child { margin-bottom: 0; }
+
+/* GitHub-style alert blockquotes (> [!NOTE] etc., rendered as
+   .markdown-alert divs by the marked extension in App.svelte) */
 .md .markdown-alert {
-  padding: 0.5rem 1rem;
-  margin: 0.4em 0;
-  border-left: 0.25em solid var(--border);
-}
-
-.md .markdown-alert > :first-child {
-  margin-top: 0;
-}
-
-.md .markdown-alert > :last-child {
-  margin-bottom: 0;
+  margin: 0.5em 0;
+  padding: 0.5em 1em;
+  border-left: 0.25em solid var(--alert-color);
 }
 
 .md .markdown-alert-title {
   display: flex;
   align-items: center;
-  font-size: 0.875rem;
+  gap: 0.4em;
+  margin: 0 0 0.25em;
   font-weight: 600;
-  line-height: 1;
-  margin-bottom: 0.4em;
+  color: var(--alert-color);
 }
 
 .md .markdown-alert-title .octicon {
-  margin-right: 0.5em;
   fill: currentColor;
+  flex-shrink: 0;
 }
 
-.md .markdown-alert-note {
-  border-left-color: var(--link);
-}
-.md .markdown-alert-note .markdown-alert-title {
-  color: var(--link);
+.md .markdown-alert p {
+  margin: 0.25em 0;
 }
 
-.md .markdown-alert-tip {
-  border-left-color: var(--ok);
-}
-.md .markdown-alert-tip .markdown-alert-title {
-  color: var(--ok);
-}
+.md .markdown-alert-note { --alert-color: #0969da; }
+.md .markdown-alert-tip { --alert-color: #1a7f37; }
+.md .markdown-alert-important { --alert-color: #8250df; }
+.md .markdown-alert-warning { --alert-color: #9a6700; }
+.md .markdown-alert-caution { --alert-color: #d1242f; }
 
-.md .markdown-alert-important {
-  border-left-color: var(--important-border, var(--accent));
-}
-.md .markdown-alert-important .markdown-alert-title {
-  color: var(--important-fg, var(--accent));
-}
-
-.md .markdown-alert-warning {
-  border-left-color: var(--warn-border, var(--sys-border));
-}
-.md .markdown-alert-warning .markdown-alert-title {
-  color: var(--warn-fg, var(--sys-fg));
-}
-
-.md .markdown-alert-caution {
-  border-left-color: var(--danger);
-}
-.md .markdown-alert-caution .markdown-alert-title {
-  color: var(--err);
-}
+:root[data-theme='dark'] .md .markdown-alert-note { --alert-color: #4493f8; }
+:root[data-theme='dark'] .md .markdown-alert-tip { --alert-color: #3fb950; }
+:root[data-theme='dark'] .md .markdown-alert-important { --alert-color: #a371f7; }
+:root[data-theme='dark'] .md .markdown-alert-warning { --alert-color: #d29922; }
+:root[data-theme='dark'] .md .markdown-alert-caution { --alert-color: #f85149; }
 
 /* Markdown tables (.md covers chat and the file viewer): full width,
    horizontal row lines only, left-aligned headers */

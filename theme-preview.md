@@ -10,8 +10,23 @@ Normal paragraph text with **bold**, *italic*, ~~strikethrough~~, and
 `inline code`. A sentence with an [external link](https://github.com/earendil-works/pi)
 and a [file link to app.py](app.py) that opens in the viewer.
 
-> A blockquote: muted background, accent border on the left.
+> A blockquote: muted text with an accent bar on the left.
 > Spanning two lines to show the wrapping.
+
+> [!NOTE]
+> Useful information that users should know, even when skimming content.
+
+> [!TIP]
+> Helpful advice for doing things better or more easily.
+
+> [!IMPORTANT]
+> Key information users need to know to achieve their goal.
+
+> [!WARNING]
+> Urgent info that needs immediate user attention to avoid problems.
+
+> [!CAUTION]
+> Advises about risks or negative outcomes of certain actions.
 
 ## Lists
 
@@ -50,6 +65,51 @@ def greet(name: str) -> str:
 // a comment
 const sum = (a, b) => a + b
 console.log(sum(2, 3))
+```
+
+```bash
+#!/usr/bin/env bash
+# build and run
+make build && make run
+```
+
+```css
+/* a comment */
+.msg.assistant {
+  background: var(--panel);
+  border-radius: 8px;
+}
+```
+
+```html
+<!-- a comment -->
+<div class="msg assistant">
+  <p>hello <strong>world</strong></p>
+</div>
+```
+
+```json
+{
+  "name": "pi-web-app",
+  "themes": ["light", "claude", "dark"],
+  "port": 5000
+}
+```
+
+```rust
+// a comment
+fn main() {
+    let answer: u32 = 42;
+    println!("answer: {answer}");
+}
+```
+
+```sql
+-- a comment
+SELECT name, created
+FROM projects
+ORDER BY created DESC
+LIMIT 5;
 ```
 
 ## A table
