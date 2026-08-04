@@ -16,6 +16,13 @@ frontend notes.
   app.py`, `ruff check app.py`, and `npm run build`, plus manual testing
   against a running instance.
 
+## Terminology
+
+- "Rendering" (in user requests) means the chat message rendering and
+  the markdown rendering in the file viewer — both share the same
+  marked + highlight.js pipeline and the `.md` styles in
+  [web/src/app.css](web/src/app.css).
+
 ## Restart semantics (important)
 
 - Changes to [app.py](app.py) require a Flask restart, which **kills the
