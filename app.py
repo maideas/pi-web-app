@@ -606,7 +606,9 @@ def markdown_css():
     """Stylesheet (structure + github palette) for rendered markdown previews."""
     global _md_css
     if _md_css is None:
-        _md_css = md_renderer().stylesheets(palettes=["pi-web-app"])
+        # Ship both palettes; the frontend picks one via data-palette on
+        # <html> ("claude" when the claude app theme is active).
+        _md_css = md_renderer().stylesheets(palettes=["pi-web-app", "claude"])
     return Response(_md_css, mimetype="text/css")
 
 

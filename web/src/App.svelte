@@ -29,6 +29,9 @@
     document.documentElement.dataset.theme = variant ? 'light' : theme
     if (variant) document.documentElement.dataset.contrast = variant
     else delete document.documentElement.dataset.contrast
+    // The markdown preview ships both palettes; pick explicitly (with
+    // several palettes loaded, the implicit default is ambiguous).
+    document.documentElement.dataset.palette = variant === 'claude' ? 'claude' : 'pi-web-app'
     localStorage.setItem('theme', theme)
   })
 

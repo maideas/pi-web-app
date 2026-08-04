@@ -434,6 +434,7 @@ aside {
 .msg.assistant pre {
   background: var(--code-bg);
   padding: 0.6rem;
+  border: 1px solid var(--border);
   border-radius: 6px;
   overflow-x: auto;
 }
@@ -445,7 +446,7 @@ aside {
   font-family: system-ui, sans-serif;
   font-size: 0.8rem;
   color: var(--muted);
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.55rem; /* breathing room between label and code */
 }
 
 .msg.assistant code {
@@ -493,11 +494,12 @@ aside {
 .msg.assistant td {
   text-align: left;
   padding: 6px 13px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--input-border); /* more visible than --border */
 }
 
 .msg.assistant thead th {
   font-weight: 600;
+  border-bottom: 2px solid var(--input-border); /* header rule slightly thicker */
 }
 
 /* Chat message links: use the theme link color (also for :visited)
@@ -668,6 +670,8 @@ button {
   padding: 0.4rem 1rem;
   cursor: pointer;
   font-size: 1rem;
+  font-family: inherit; /* buttons don't inherit fonts by default and
+                           would render in the UA font (e.g. Arial) */
 }
 
 button:disabled {
@@ -780,8 +784,8 @@ select.sessionselect {
   flex-direction: column;
   border-bottom: 1px solid var(--border);
   min-height: 0;
-  /* unify font with the chat messages */
-  font-family: system-ui, sans-serif;
+  /* inherits the default text font (the global button rule passes it
+     through to the directory entries) */
   font-size: 1rem;
 }
 
