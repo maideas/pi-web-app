@@ -50,6 +50,58 @@
   --danger: #A31B1B;
 }
 
+/* Claude theme: the light theme with the warm Claude look — cream
+   background, terracotta accents, rust inline code, green/blue syntax
+   highlighting, serif headings */
+:root[data-theme='light'][data-contrast='claude'] {
+  --bg: #F5F2EA;
+  --fg: #1F1E1C;
+  --border: #E4DFD2;
+  --border-soft: #ECE8DB;
+  --panel: #FBF9F4;
+  --panel-alt: #EDE9DE;
+  --code-bg: #EDE9DE;
+  --accent: #C96442;
+  --accent-fg: #FFFFFF;
+  --user-bg: #EAE4D3;
+  --user-fg: #1F1E1C;
+  --muted: #8A8578;
+  --muted2: #ABA595;
+  --status-fg: #8A8578;
+  --link: #B4552D;
+  --input-border: #D8D2C2;
+  --sys-bg: #F7EEDD;
+  --sys-border: #E0C88F;
+  --sys-fg: #6B5B2E;
+  --ok: #3E7C4F;
+  --err: #B54334;
+  --danger: #96352A;
+}
+
+/* Serif headings in chat, as in the reference screenshots */
+:root[data-theme='light'][data-contrast='claude'] .msg.assistant h1,
+:root[data-theme='light'][data-contrast='claude'] .msg.assistant h2,
+:root[data-theme='light'][data-contrast='claude'] .msg.assistant h3,
+:root[data-theme='light'][data-contrast='claude'] .msg.assistant h4,
+:root[data-theme='light'][data-contrast='claude'] .msg.assistant h5,
+:root[data-theme='light'][data-contrast='claude'] .msg.assistant h6 {
+  font-family: ui-serif, Georgia, 'Times New Roman', serif;
+}
+
+/* Rust inline code on a warm pill (code blocks keep --code-bg) */
+:root[data-theme='light'][data-contrast='claude'] .msg.assistant code {
+  color: #B4552D;
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+
+:root[data-theme='light'][data-contrast='claude'] .msg.assistant pre code {
+  color: inherit;
+  background: transparent;
+  padding: 0;
+}
+
 :root {
   font-family: system-ui, sans-serif;
 }
@@ -58,6 +110,31 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
+}
+
+/* Scrollbars: track slightly different from the background
+   (--panel-alt), thumb clearly visible (--muted) but not glaring */
+* {
+  scrollbar-color: var(--muted) var(--panel-alt);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--panel-alt);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 5px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 75%, var(--fg));
 }
 
 main {
@@ -361,6 +438,16 @@ aside {
   overflow-x: auto;
 }
 
+/* Language hint above fenced code blocks (from the fence info string) */
+.msg.assistant pre[data-lang]::before {
+  content: attr(data-lang);
+  display: block;
+  font-family: system-ui, sans-serif;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+
 .msg.assistant code {
   font-family: ui-monospace, monospace;
   font-size: 0.9em;
@@ -392,6 +479,25 @@ aside {
 
 .msg.assistant p {
   margin: 0.4em 0;
+}
+
+/* Chat tables: full message width, horizontal row lines only,
+   left-aligned headers — like the md-to-html-renderer output */
+.msg.assistant table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+
+.msg.assistant th,
+.msg.assistant td {
+  text-align: left;
+  padding: 6px 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.msg.assistant thead th {
+  font-weight: 600;
 }
 
 /* Chat message links: use the theme link color (also for :visited)
@@ -459,6 +565,12 @@ aside {
 .msg.tool code {
   margin-left: 0.5rem;
   color: var(--link);
+}
+
+/* Claude theme: --link is the brownish rust, but tool-call commands
+   read better in the light theme's blue */
+:root[data-theme='light'][data-contrast='claude'] .msg.tool code {
+  color: #0969da;
 }
 
 .msg.tool pre {

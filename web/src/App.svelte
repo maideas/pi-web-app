@@ -15,10 +15,20 @@
     document.head.appendChild(style)
   }
 
-  // Theme (persisted)
-  let theme = $state(localStorage.getItem('theme') ?? 'light')
+  // Theme (persisted). 'claude' is a light-theme variant applied via
+  // data-contrast while data-theme stays "light" — so the markdown
+  // preview palette (which only knows light/dark) keeps rendering the
+  // light variant. Unknown persisted values (e.g. a removed theme)
+  // fall back to light.
+  const THEME_VARIANTS = { claude: 'claude' }
+  const KNOWN_THEMES = ['light', 'dark', ...Object.keys(THEME_VARIANTS)]
+  const savedTheme = localStorage.getItem('theme')
+  let theme = $state(KNOWN_THEMES.includes(savedTheme) ? savedTheme : 'light')
   $effect(() => {
-    document.documentElement.dataset.theme = theme
+    const variant = THEME_VARIANTS[theme]
+    document.documentElement.dataset.theme = variant ? 'light' : theme
+    if (variant) document.documentElement.dataset.contrast = variant
+    else delete document.documentElement.dataset.contrast
     localStorage.setItem('theme', theme)
   })
 
@@ -36,7 +46,9 @@
         const html = language
           ? hljs.highlight(text, { language }).value
           : escapeHtml(text)
-        return `<pre><code class="hljs">${html}</code></pre>`
+        // Language hint shown as a muted label above the block (via CSS)
+        const hint = lang ? ` data-lang="${escapeHtml(lang)}"` : ''
+        return `<pre${hint}><code class="hljs">${html}</code></pre>`
       },
       html(token) {
         return escapeHtml(token.text || '')
@@ -946,6 +958,7 @@
       <div class="tgroup">
       <select bind:value={theme} title="Theme">
         <option value="light">light</option>
+        <option value="claude">claude</option>
         <option value="dark">dark</option>
       </select>
       </div>
