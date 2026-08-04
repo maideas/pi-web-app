@@ -276,6 +276,15 @@
     return marked.parse(text ?? '', { async: false })
   }
 
+  // Auto-scroll only when the user is already at (near) the bottom:
+  // scrolling up while the agent works stops the snapping, scrolling
+  // back to the bottom re-enables it.
+  let stickToBottom = true
+  function onChatScroll() {
+    if (!chatEl) return
+    stickToBottom = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 40
+  }
+
   let scrollQueued = false
   async function scrollToBottom() {
     if (scrollQueued) return
@@ -283,7 +292,7 @@
     requestAnimationFrame(async () => {
       scrollQueued = false
       await tick()
-      if (chatEl) chatEl.scrollTop = chatEl.scrollHeight
+      if (chatEl && stickToBottom) chatEl.scrollTop = chatEl.scrollHeight
     })
   }
 
@@ -385,6 +394,7 @@
   async function reinit() {
     entries = []
     attachments = []
+    stickToBottom = true // fresh content: start at the end
     selectedFile = null
     toolsUsedInRun = false
     await browse('')
@@ -797,6 +807,7 @@
     })
     input = ''
     attachments = []
+    stickToBottom = true // sending is an explicit jump to the end
     scrollToBottom()
     const body = { message }
     if (images.length) body.images = images
@@ -1052,7 +1063,7 @@
       </div>
     </div>
   {/if}
-  <div class="chat" bind:this={chatEl}>
+  <div class="chat" bind:this={chatEl} onscroll={onChatScroll}>
     {#if entries.length === 0}
       <div class="chat-empty" aria-hidden="true">
         <svg class="logo" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
