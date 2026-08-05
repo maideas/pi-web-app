@@ -1088,7 +1088,31 @@ select.sessionselect {
   font-size: 1rem;
 }
 
+.viewer-head .nav {
+  flex-shrink: 0;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem; /* same padding as the toolbar buttons */
+  font-size: 1rem;
+  font-family: Arial, sans-serif;
+  cursor: pointer;
+  /* same height as the toolbar buttons */
+  height: 2rem;
+  box-sizing: border-box;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+
+.viewer-head .nav:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .viewer-head .fname {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -266,6 +266,46 @@
   let dirEntries = $state([])
   let selectedFile = $state(null) // { path, text, reason }
 
+  // Viewer navigation history (paths). Opening a file via the browser or
+  // a markdown link pushes the previously shown file onto `viewerHistory`
+  // and clears `viewerFuture`; the </> buttons move between the stacks.
+  // refreshFiles (same file reloaded) and reinit (project switch, stacks
+  // cleared) don't push.
+  let viewerHistory = $state([])
+  let viewerFuture = $state([])
+  function pushViewerHistory(prevPath, newPath) {
+    if (prevPath && prevPath !== newPath) {
+      viewerHistory.push(prevPath)
+      viewerFuture = []
+    }
+  }
+
+  // Show a file at `path` and sync the directory browser to its location
+  // (the selected entry is highlighted via selectedFile.path).
+  async function showFileAt(path) {
+    const f = await loadViewerFile(path)
+    if (!f.path || f.error) return false
+    selectedFile = f
+    rememberFile(path)
+    await browse(path.split('/').slice(0, -1).join('/'))
+    return true
+  }
+
+  // Back/forward: pop from one stack until a still-loadable file is found
+  // (files may vanish between visits), moving the current file to the
+  // other stack on success.
+  async function viewerGo(dir) {
+    const [from, to] = dir < 0 ? [viewerHistory, viewerFuture] : [viewerFuture, viewerHistory]
+    while (from.length) {
+      const path = from.pop()
+      const cur = selectedFile?.path
+      if (await showFileAt(path)) {
+        if (cur && cur !== path) to.push(cur)
+        return
+      }
+    }
+  }
+
   // Markdown files are rendered in the viewer with the same marked +
   // highlight.js pipeline as the chat, so both look identical.
   const isMarkdown = (path) => /\.md|\.markdown$/i.test(path ?? '')
@@ -307,13 +347,9 @@
   }
 
   async function openLinkedFile(path) {
-    const f = await loadViewerFile(path)
-    if (f.path && !f.error) {
-      selectedFile = f
-      rememberFile(path)
-      // Sync the directory browser to the file's location (the selected
-      // entry is highlighted via selectedFile.path).
-      await browse(path.split('/').slice(0, -1).join('/'))
+    const prev = selectedFile?.path
+    if (await showFileAt(path)) {
+      pushViewerHistory(prev, path)
       return
     }
     // Not a file — maybe a directory link: navigate the browser there.
@@ -362,7 +398,10 @@
       selectedFile = null
       await browse(e.path)
     } else {
-      selectedFile = await loadViewerFile(e.path)
+      const prev = selectedFile?.path
+      const f = await loadViewerFile(e.path)
+      if (f.path && !f.error) pushViewerHistory(prev, e.path)
+      selectedFile = f
       rememberFile(e.path)
     }
   }
@@ -564,6 +603,8 @@
     entries = []
     attachments = []
     selectedFile = null
+    viewerHistory = []
+    viewerFuture = []
     toolsUsedInRun = false
     await browse('')
     await loadHistory()
@@ -1447,6 +1488,8 @@
     <div class="viewer">
       {#if selectedFile}
         <div class="viewer-head">
+          <button class="nav" title="back" disabled={viewerHistory.length === 0} onclick={() => viewerGo(-1)}>&lt;</button>
+          <button class="nav" title="forward" disabled={viewerFuture.length === 0} onclick={() => viewerGo(1)}>&gt;</button>
           <span class="fname">{selectedFile.path}</span>
           <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
         </div>
