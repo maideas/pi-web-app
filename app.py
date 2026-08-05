@@ -554,7 +554,7 @@ def _auto_name_locked(force: bool):
     # and would bloat the prompt for a six-word title.
     digest = f"User: {user_texts[0][:400]}"
     if len(user_texts) > 1:
-        digest += "\n" + "\n".join(f"User: {t[:120]}" for t in user_texts[1:])
+        digest += "\n" + "\n".join(f"User: {t[:240]}" for t in user_texts[1:])
     prompt = (
         "Give this chat session a short, meaningful title (at most 6 words) "
         "covering all of the user's requests, not just the latest one. "
@@ -562,7 +562,23 @@ def _auto_name_locked(force: bool):
         + digest
     )
     model = data.get("model") or {}
-    cmd = ["pi", "--print", "--no-session", "--no-tools"]
+    # Strip everything irrelevant for a six-word title: the default coding
+    # system prompt, AGENTS.md context, extensions, skills, templates and
+    # thinking together cost ~3.5k input tokens per call; this runs at ~50.
+    cmd = [
+        "pi",
+        "--print",
+        "--no-session",
+        "--no-tools",
+        "--no-context-files",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--thinking",
+        "off",
+        "--system-prompt",
+        "You generate short chat-session titles.",
+    ]
     if model.get("provider") and model.get("id"):
         cmd += ["--provider", model["provider"], "--model", model["id"]]
     cmd.append(prompt)
