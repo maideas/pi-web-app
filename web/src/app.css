@@ -520,6 +520,7 @@ aside {
 }
 
 .md pre {
+  margin: 0.85em 0;
   background: var(--code-bg);
   padding: 0.6rem;
   border: 1px solid var(--border);
@@ -555,7 +556,9 @@ aside {
 .md h4,
 .md h5,
 .md h6 {
-  margin: 1em 0 0.5em; /* more air around headings for readability */
+  /* More space above than below: a heading belongs to the block it
+     introduces, so it should sit closer to that than to the previous */
+  margin: 1.5em 0 0.6em;
   line-height: 1.3;
 }
 
@@ -567,13 +570,36 @@ aside {
 .md h6 { font-size: 0.9rem; }
 
 .md p {
-  margin: 0.4em 0;
+  margin: 0.85em 0;
 }
+
+.md ul,
+.md ol {
+  margin: 0.85em 0;
+}
+
+.md li + li {
+  margin-top: 0.3em; /* separate items without doubling the list's margins */
+}
+
+.md li > ul,
+.md li > ol {
+  margin: 0.3em 0; /* nested lists stay compact */
+}
+
+.md hr {
+  margin: 1.4em 0;
+}
+
+/* Adjacent vertical margins collapse; trim the outermost ones so the
+   first/last element don't double up with the container's padding */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
 
 /* Blockquotes (.md covers chat and the file viewer): muted text with
    an accent bar on the left */
 .md blockquote {
-  margin: 0.5em 0;
+  margin: 0.85em 0;
   padding: 0 1em;
   color: var(--muted);
   border-left: 0.25em solid var(--input-border);
@@ -585,7 +611,7 @@ aside {
 /* GitHub-style alert blockquotes (> [!NOTE] etc., rendered as
    .markdown-alert divs by the marked extension in App.svelte) */
 .md .markdown-alert {
-  margin: 0.5em 0;
+  margin: 0.85em 0;
   padding: 0.5em 1em;
   border-left: 0.25em solid var(--alert-color);
 }
