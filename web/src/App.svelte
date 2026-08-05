@@ -928,7 +928,8 @@
   // Auto-name the session from its content after a run ends; the
   // backend only names sessions that don't have a name yet (an existing
   // name is never overwritten automatically). force=true regenerates on
-  // explicit user request (/rename).
+  // explicit user request (/rename). The autoNaming flag dedupes the
+  // agent_end/agent_settled pair that both reach this call.
   async function maybeAutoName(force = false) {
     if (!force && autoNaming) return
     autoNaming = true

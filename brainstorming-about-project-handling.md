@@ -4,6 +4,7 @@ Status: **first increment implemented** (see §7): project registry
 (`projects.json` in the app dir, gitignored), `GET/POST /api/projects`,
 `POST /api/projects/<id>/open`, a project switcher + new-project dialog
 in the toolbar, and the file browser rooted at the current project.
+Detach and per-project last-file restore landed afterwards.
 Decisions for the §6 open questions are recorded there.
 Context: the app (see [README.md](README.md)) is currently a chat UI
 around a single `pi --mode rpc` process bound to one directory. It

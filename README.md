@@ -37,7 +37,7 @@ Features:
   the file's directory), external links open in a new tab
 - Extension UI dialogs: confirm/select/input requests from pi extensions
   are answered via native browser dialogs
-- Light, cream (warm cream look), and dark themes (persisted in
+- Light, cream (warm light-theme variant), and dark themes (persisted in
   localStorage); the markdown preview always follows light/dark only
 
 **Limitation (by design):** single-user. One pi subprocess and one shared
@@ -68,7 +68,7 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 |---|---|
 | [`app.py`](app.py) | Flask backend: pi subprocess management, RPC bridging, REST/SSE API, static hosting |
 | [`web/src/App.svelte`](web/src/App.svelte) | Entire SPA: chat, toolbar, sessions, slash commands, file browser/viewer |
-| [`web/src/app.css`](web/src/app.css) | All styles; light/dark themes via CSS custom properties |
+| [`web/src/app.css`](web/src/app.css) | All styles; light/cream/dark themes via CSS custom properties |
 | [`web/src/main.js`](web/src/main.js) | Svelte entry point (mounts `App`) |
 | [`web/index.html`](web/index.html) | Vite HTML entry |
 | [`web/vite.config.js`](web/vite.config.js) | Vite config; dev-server proxy for all backend endpoints |
@@ -76,6 +76,7 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, highlight.js) |
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
 | [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (first increment implemented) |
+| [`theme-preview.md`](theme-preview.md) | Demo document for comparing the themes in the file viewer |
 | [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask) |
 | [`web/public/`](web/public/) | Static assets (favicon, icons) copied into `dist/` |
 | [`AGENTS.md`](AGENTS.md) | Project conventions for coding agents |
@@ -119,10 +120,6 @@ Sessions and slash commands:
 | `/export_html` | POST | Export session to an HTML file |
 | `/ui-response` | POST | Relay extension UI dialog responses to pi |
 
-Projects:
-
-| Endpoint | Method | Purpose |
-|---|---|---|
 Projects:
 
 | Endpoint | Method | Purpose |
