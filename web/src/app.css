@@ -519,6 +519,13 @@ aside {
   background: var(--bg);
 }
 
+/* Images embedded in rendered markdown (chat + viewer): never wider
+   than the pane, aspect ratio preserved */
+.md img {
+  max-width: 100%;
+  height: auto;
+}
+
 .md pre {
   margin: 0.85em 0;
   background: var(--code-bg);
@@ -1138,6 +1145,25 @@ select.sessionselect {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: inherit;
   line-height: inherit;
+}
+
+/* Image preview: scale down to fit the viewer pane (keeping the
+   aspect ratio); smaller images render at natural size. The flex
+   wrapper centers the image in the pane. */
+.filecontent.image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 1.2rem;
+  overflow: hidden;
+}
+
+.filecontent.image img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
 }
 
 .filecontent.placeholder,

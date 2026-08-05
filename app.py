@@ -783,6 +783,23 @@ def api_file():
     return jsonify({"path": str(p.relative_to(root)), "text": text, "reason": None})
 
 
+@app.route("/raw/<path:rel>")
+def raw(rel):
+    """Serve a project file inline (image preview in the file viewer).
+
+    Unlike /download this sends the real Content-Type so <img> tags can
+    render it. `CSP: sandbox` keeps scripts in directly-opened SVGs from
+    running in the app's origin; as an <img> source they are inert anyway.
+    """
+    p = safe_path(rel)  # containment check
+    if not p.is_file():
+        http_abort(404)
+    resp = send_from_directory(project_root(), p.relative_to(project_root()))
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Content-Security-Policy"] = "sandbox"
+    return resp
+
+
 @app.route("/download/<path:rel>")
 def download(rel):
     p = safe_path(rel)  # containment check

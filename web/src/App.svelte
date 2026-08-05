@@ -80,6 +80,20 @@
       html(token) {
         return escapeHtml(token.text || '')
       },
+      image(token) {
+        // Images in markdown: absolute http(s)/data URLs pass through;
+        // relative paths are served inline via /raw, resolved against
+        // the markdown file's own directory (mdImageBase, set by
+        // renderMarkdown) — otherwise they'd 404 against the SPA URL.
+        const href = token.href ?? ''
+        if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
+          if (!/^(https?|data):/i.test(href)) return escapeHtml(token.text || '')
+          return false // safe absolute URL: default rendering
+        }
+        const path = normalizePath(mdImageBase ? `${mdImageBase}/${href}` : href)
+        const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
+        return `<img src="/raw/${encodeURI(path)}" alt="${escapeHtml(token.text || '')}"${title}>`
+      },
       link(token) {
         // Drop links with unsafe schemes (javascript:, data:, ...) at
         // render time; keep the link text. Covers chat messages, which
@@ -239,6 +253,18 @@
   // Markdown files are rendered in the viewer with the same marked +
   // highlight.js pipeline as the chat, so both look identical.
   const isMarkdown = (path) => /\.md|\.markdown$/i.test(path ?? '')
+  // Image files are rendered as <img> via /raw (scaled to fit the
+  // viewer, see .filecontent.image) instead of the binary placeholder.
+  const isImage = (path) => /\.(png|jpe?g|gif|webp|bmp|ico|avif|svg)$/i.test(path ?? '')
+
+  // Load a file for the viewer: images only need an existence check
+  // (the <img> streams the bytes itself, so MAX_PREVIEW_BYTES doesn't
+  // apply); `v` cache-busts the <img> after agent runs (refreshFiles).
+  async function loadViewerFile(path) {
+    const f = await apiGet(`/api/file?path=${encodeURIComponent(path)}`)
+    if (!f.path || f.error) return f
+    return isImage(f.path) ? { path: f.path, image: true, v: Date.now() } : f
+  }
   let toolsUsedInRun = $state(false)
   let autoNaming = $state(false)
 
@@ -265,7 +291,7 @@
   }
 
   async function openLinkedFile(path) {
-    const f = await apiGet(`/api/file?path=${encodeURIComponent(path)}`)
+    const f = await loadViewerFile(path)
     if (f.path && !f.error) {
       selectedFile = f
       rememberFile(path)
@@ -320,7 +346,7 @@
       selectedFile = null
       await browse(e.path)
     } else {
-      selectedFile = await apiGet(`/api/file?path=${encodeURIComponent(e.path)}`)
+      selectedFile = await loadViewerFile(e.path)
       rememberFile(e.path)
     }
   }
@@ -339,7 +365,7 @@
     browserParent = list.parent ?? null
     dirEntries = list.entries
     if (selectedFile) {
-      const f = await apiGet(`/api/file?path=${encodeURIComponent(selectedFile.path)}`)
+      const f = await loadViewerFile(selectedFile.path)
       if (f.error) {
         selectedFile = null
         await browse('')
@@ -356,8 +382,17 @@
     return `${(s / 1024 / 1024).toFixed(1)} MB`
   }
 
-  function renderMarkdown(text) {
-    return marked.parse(text ?? '', { async: false })
+  // Base directory for resolving relative image paths during a parse;
+  // '' (project root) for chat messages, the file's directory for the
+  // viewer. Module-scoped because marked renderers take no extra args.
+  let mdImageBase = ''
+  function renderMarkdown(text, base = '') {
+    mdImageBase = base
+    try {
+      return marked.parse(text ?? '', { async: false })
+    } finally {
+      mdImageBase = ''
+    }
   }
 
   // Auto-scroll keeps up with streaming only while the user is at (near)
@@ -526,9 +561,9 @@
     ])
     // Restore the project's remembered viewer file, README as fallback.
     const remembered = projects.find((p) => p.current)?.lastFile ?? 'README.md'
-    let f = await apiGet(`/api/file?path=${encodeURIComponent(remembered)}`)
+    let f = await loadViewerFile(remembered)
     if ((!f.path || f.error) && remembered !== 'README.md') {
-      f = await apiGet('/api/file?path=README.md')
+      f = await loadViewerFile('README.md')
     }
     if (f.path && !f.error) {
       selectedFile = f
@@ -1404,10 +1439,14 @@
         <div class="fade fade-top" class:visible={fadeTop}></div>
         <div class="fade fade-bottom" class:visible={fadeBottom}></div>
         {#if selectedFile}
-          {#if selectedFile.text !== null && isMarkdown(selectedFile.path)}
+          {#if selectedFile.image}
+            <div class="filecontent image">
+              <img src={`/raw/${encodeURI(selectedFile.path)}?v=${selectedFile.v}`} alt={selectedFile.path} />
+            </div>
+          {:else if selectedFile.text !== null && isMarkdown(selectedFile.path)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="filecontent md" onclick={onMdClick}>{@html renderMarkdown(selectedFile.text)}</div>
+            <div class="filecontent md" onclick={onMdClick}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'))}</div>
           {:else if selectedFile.text !== null}
             <pre class="filecontent hljs"><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>
           {:else}
