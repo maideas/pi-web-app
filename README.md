@@ -37,7 +37,7 @@ Features:
   the file's directory), external links open in a new tab
 - Extension UI dialogs: confirm/select/input requests from pi extensions
   are answered via native browser dialogs
-- Light, claude (warm cream look), and dark themes (persisted in
+- Light, cream (warm cream look), and dark themes (persisted in
   localStorage); the markdown preview always follows light/dark only
 
 **Limitation (by design):** single-user. One pi subprocess and one shared

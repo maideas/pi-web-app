@@ -58,10 +58,10 @@
   --important-border: #8250df;
 }
 
-/* Claude theme: the light theme with the warm Claude look — cream
-   background, terracotta accents, rust inline code, green/blue syntax
+/* Cream theme: the light theme with a warm look — cream background,
+   terracotta accents, rust inline code, green/blue syntax
    highlighting, serif headings */
-:root[data-theme='light'][data-contrast='claude'] {
+:root[data-theme='light'][data-contrast='cream'] {
   --bg: #F5F2EA;
   --fg: #1F1E1C;
   --border: #E4DFD2;
@@ -91,24 +91,24 @@
 }
 
 /* Serif headings in chat, as in the reference screenshots */
-:root[data-theme='light'][data-contrast='claude'] .md h1,
-:root[data-theme='light'][data-contrast='claude'] .md h2,
-:root[data-theme='light'][data-contrast='claude'] .md h3,
-:root[data-theme='light'][data-contrast='claude'] .md h4,
-:root[data-theme='light'][data-contrast='claude'] .md h5,
-:root[data-theme='light'][data-contrast='claude'] .md h6 {
+:root[data-theme='light'][data-contrast='cream'] .md h1,
+:root[data-theme='light'][data-contrast='cream'] .md h2,
+:root[data-theme='light'][data-contrast='cream'] .md h3,
+:root[data-theme='light'][data-contrast='cream'] .md h4,
+:root[data-theme='light'][data-contrast='cream'] .md h5,
+:root[data-theme='light'][data-contrast='cream'] .md h6 {
   font-family: ui-serif, Georgia, 'Times New Roman', serif;
 }
 
 /* Rust inline code on a warm pill (code blocks keep --code-bg) */
-:root[data-theme='light'][data-contrast='claude'] .md code {
+:root[data-theme='light'][data-contrast='cream'] .md code {
   color: #B4552D;
   background: var(--code-bg);
   border-radius: 4px;
   padding: 0.1em 0.3em;
 }
 
-:root[data-theme='light'][data-contrast='claude'] .md pre code {
+:root[data-theme='light'][data-contrast='cream'] .md pre code {
   color: inherit;
   background: transparent;
   padding: 0;
@@ -709,9 +709,9 @@ aside {
   color: var(--link);
 }
 
-/* Claude theme: --link is the brownish rust, but tool-call commands
+/* Cream theme: --link is the brownish rust, but tool-call commands
    read better in the light theme's blue */
-:root[data-theme='light'][data-contrast='claude'] .msg.tool code {
+:root[data-theme='light'][data-contrast='cream'] .msg.tool code {
   color: #0969da;
 }
 

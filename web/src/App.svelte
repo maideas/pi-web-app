@@ -15,12 +15,12 @@
     document.head.appendChild(style)
   }
 
-  // Theme (persisted). 'claude' is a light-theme variant applied via
+  // Theme (persisted). 'cream' is a light-theme variant applied via
   // data-contrast while data-theme stays "light" — so the markdown
   // preview palette (which only knows light/dark) keeps rendering the
   // light variant. Unknown persisted values (e.g. a removed theme)
   // fall back to light.
-  const THEME_VARIANTS = { claude: 'claude' }
+  const THEME_VARIANTS = { cream: 'cream' }
   const KNOWN_THEMES = ['light', 'dark', ...Object.keys(THEME_VARIANTS)]
   const savedTheme = localStorage.getItem('theme')
   let theme = $state(KNOWN_THEMES.includes(savedTheme) ? savedTheme : 'light')
@@ -1082,7 +1082,7 @@
       <div class="tgroup">
       <select bind:value={theme} title="Theme">
         <option value="light">light</option>
-        <option value="claude">claude</option>
+        <option value="cream">cream</option>
         <option value="dark">dark</option>
       </select>
       </div>

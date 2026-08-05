@@ -1,6 +1,6 @@
 # Theme Preview
 
-A demo document for comparing the light, claude, and dark themes.
+A demo document for comparing the light, cream, and dark themes.
 It exercises the elements used across this project's docs — see
 [README.md](README.md) for the real thing.
 
@@ -91,7 +91,7 @@ make build && make run
 ```json
 {
   "name": "pi-web-app",
-  "themes": ["light", "claude", "dark"],
+  "themes": ["light", "cream", "dark"],
   "port": 5000
 }
 ```
