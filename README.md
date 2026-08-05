@@ -23,8 +23,8 @@ Features:
 - Session management: list, switch, create, and name sessions;
   sessions are auto-named from the chat content (one-shot model call)
   once a run has produced enough text; after that the name is kept —
-  regenerate it on request with `/rename` (considers user and assistant
-  messages)
+  regenerate it on request with `/rename` (titles are generated from
+  the user messages)
 - Slash commands with autocomplete: `/new`, `/abort`, `/compact`, `/name`,
   `/rename`, `/export` are mapped to their RPC equivalents; extension commands, prompt
   templates, and skills (as reported by pi's `get_commands`) are forwarded;

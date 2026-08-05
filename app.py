@@ -28,6 +28,8 @@ from flask import abort as http_abort
 
 PI_CMD = ["pi", "--mode", "rpc"]
 DIST_DIR = "web/dist"
+# Auto-naming threshold: combined length of the session's user messages.
+MIN_USER_CHARS = 40
 APP_ROOT = Path(__file__).resolve().parent
 REGISTRY_PATH = APP_ROOT / "projects.json"
 
@@ -213,6 +215,9 @@ current: dict = {"project": most_recent_project(projects), "pi": None}
 current["pi"] = PiProcess(current["project"]["path"])
 resume_latest_session(current["pi"])
 switch_lock = threading.Lock()
+# Serializes /api/auto_name: title generation takes seconds and two
+# overlapping calls would both pass the "already named" check.
+auto_name_lock = threading.Lock()
 
 
 def pi() -> PiProcess:
@@ -479,16 +484,33 @@ def auto_name():
     Without {"force": true} this only names sessions that have no display
     name yet (the frontend calls it after run ends) — an existing name,
     whether generated or set manually, is never overwritten without an
-    explicit request. Content threshold: first user message >= 20 chars
-    plus an assistant reply. No-ops return success=false with a reason.
+    explicit request. Content threshold: the user messages combined
+    must reach MIN_USER_CHARS — user requests drive the topic, so the
+    digest and the threshold both ignore assistant replies. No-ops
+    return success=false with a reason.
+
+    Serialized via auto_name_lock (a second tab or a /rename during an
+    auto-name would otherwise rename twice). If the session changes
+    while the one-shot call runs, the title is discarded instead of
+    being applied to the wrong session.
     """
     body = request.get_json(force=True, silent=True)
     force = isinstance(body, dict) and bool(body.get("force"))
+    if not auto_name_lock.acquire(blocking=False):
+        return jsonify({"success": False, "error": "naming already in progress"})
+    try:
+        return _auto_name_locked(force)
+    finally:
+        auto_name_lock.release()
+
+
+def _auto_name_locked(force: bool):
     p = pi()
     state = p.rpc_request({"type": "get_state"})
     if not state.get("success"):
         return jsonify({"success": False, "error": "no state"})
     data = state.get("data", {})
+    session_file = data.get("sessionFile")
     current_name = data.get("sessionName")
     if current_name and not force:
         return jsonify({"success": False, "error": "already named", "name": current_name})
@@ -504,21 +526,18 @@ def auto_name():
     messages = msgs.get("data", {}).get("messages", []) if msgs.get("success") else []
     # Skip textless messages: a turn can be thinking + tool calls only.
     user_texts = [t for m in messages if m.get("role") == "user" if (t := text_of(m)).strip()]
-    asst_texts = [t for m in messages if m.get("role") == "assistant" if (t := text_of(m)).strip()]
-    if not user_texts or len(user_texts[0].strip()) < 20 or not asst_texts:
+    if sum(len(t) for t in user_texts) < MIN_USER_CHARS:
         return jsonify({"success": False, "error": "not enough content"})
 
-    # Title from the whole conversation: every user message, truncated
-    # (user requests drive the topic), plus the first and latest
-    # assistant replies (assistant text is bulky, so it is not included
-    # in full — that would blow up the prompt for a six-word title).
-    digest = f"User: {user_texts[0][:400]}\nAssistant: {asst_texts[0][:300]}"
+    # Title from the user messages only, first one nearly in full, the
+    # rest truncated — assistant replies mostly restate the requests
+    # and would bloat the prompt for a six-word title.
+    digest = f"User: {user_texts[0][:400]}"
     if len(user_texts) > 1:
-        digest += "\n...\n" + "\n".join(f"User: {t[:120]}" for t in user_texts[1:])
-        digest += f"\nAssistant (latest): {asst_texts[-1][:300]}"
+        digest += "\n" + "\n".join(f"User: {t[:120]}" for t in user_texts[1:])
     prompt = (
         "Give this chat session a short, meaningful title (at most 6 words) "
-        "covering the whole conversation, not just the latest request. "
+        "covering all of the user's requests, not just the latest one. "
         "Reply with the title only: no quotes, no trailing punctuation, no explanation.\n\n"
         + digest
     )
@@ -528,13 +547,21 @@ def auto_name():
         cmd += ["--provider", model["provider"], "--model", model["id"]]
     cmd.append(prompt)
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
+        # cwd: project-local pi config (model defaults) should apply.
+        r = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=60, check=False, cwd=project_root()
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return jsonify({"success": False, "error": f"naming call failed: {exc}"})
     first_line = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
     name = first_line.strip().strip('"\'*').rstrip(".!")[:60]
     if not name:
         return jsonify({"success": False, "error": "empty name"})
+    # The user may have switched or started a session while the one-shot
+    # call ran — don't apply the title to the wrong session.
+    now = p.rpc_request({"type": "get_state"})
+    if not now.get("success") or now.get("data", {}).get("sessionFile") != session_file:
+        return jsonify({"success": False, "error": "session changed during naming"})
     resp = p.rpc_request({"type": "set_session_name", "name": name})
     return jsonify(
         {"success": bool(resp.get("success")), "name": name, "previous": current_name or None}
