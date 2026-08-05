@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="web/public/logo.svg" width="128" alt="pi web UI logo">
+</p>
+
 # pi agent web UI
 
 A browser-based chat interface for the [pi coding agent](https://github.com/earendil-works/pi).
@@ -9,36 +13,15 @@ Features:
 
 - Chat with markdown rendering, syntax highlighting, and collapsible
   thinking/tool blocks
-- Steering: the input stays usable while the agent works — sending then
-  queues the message with pi's `steer` behavior; with an empty input the
-  send button acts as abort
-- Image and text-file attachments (text files are inlined into the prompt)
+- Steerable: the input stays usable while the agent works — send to
+  queue a steering message, or abort
+- Image and text-file attachments
 - Model and thinking-level selectors, live token/cost/context stats
-- Multiple projects: register or create project directories, switch
-  between them (pi respawns with the project dir as cwd), and detach
-  them again (registry only; the directory stays on disk); registry in
-  `projects.json`. On startup the most recently opened project and its
-  latest session are restored automatically, and the viewer reopens the
-  file last viewed in that project (`lastFile`, README.md as fallback)
-- Session management: list, switch, create, and name sessions;
-  sessions are auto-named from the chat content (one-shot model call)
-  once a run has produced enough text; after that the name is kept —
-  regenerate it on request with `/rename` (titles are generated from
-  the user messages)
-- Slash commands with autocomplete: `/new`, `/abort`, `/compact`, `/name`,
-  `/rename`, `/export` are mapped to their RPC equivalents; extension commands, prompt
-  templates, and skills (as reported by pi's `get_commands`) are forwarded;
-  unrecognized TUI-only commands are blocked with a hint
-- Project file browser with preview and download; auto-refreshes after
-  a run that used tools. Markdown files render with the same marked +
-  highlight.js pipeline as the chat (identical look), everything else
-  gets syntax-highlighted plain text. Links in rendered markdown are
-  intercepted: relative file links load in the viewer (resolved against
-  the file's directory), external links open in a new tab
-- Extension UI dialogs: confirm/select/input requests from pi extensions
-  are answered via native browser dialogs
-- Light, cream (warm light-theme variant), and dark themes (persisted in
-  localStorage); the markdown preview always follows light/dark only
+- Multiple projects and sessions: switch projects, restore the last
+  session and open file; sessions are auto-named from chat content
+- Slash commands with autocomplete, mapped to their RPC equivalents
+- Project file browser with markdown preview and download
+- Light, cream, and dark themes
 
 **Limitation (by design):** single-user. One pi subprocess and one shared
 event stream serve all connected browser tabs.
@@ -78,7 +61,7 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (first increment implemented) |
 | [`theme-preview.md`](theme-preview.md) | Demo document for comparing the themes in the file viewer |
 | [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask) |
-| [`web/public/`](web/public/) | Static assets (favicon, icons) copied into `dist/` |
+| [`web/public/`](web/public/) | Static assets (favicon, logo, icons) copied into `dist/` |
 | [`AGENTS.md`](AGENTS.md) | Project conventions for coding agents |
 
 Generated content (not committed): `web/dist/`, `web/node_modules/`,

@@ -1,6 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte'
   import { marked } from 'marked'
+  import DOMPurify from 'dompurify'
   import hljs from 'highlight.js'
   import hljsDark from 'highlight.js/styles/github-dark.css?inline'
   import hljsLight from 'highlight.js/styles/github.css?inline'
@@ -78,7 +79,22 @@
         return `<pre${hint}><code class="hljs">${html}</code></pre>`
       },
       html(token) {
-        return escapeHtml(token.text || '')
+        // Raw HTML embedded in markdown (e.g. <p align="center"> for a
+        // centered logo): sanitize and pass through instead of escaping.
+        // Relative img srcs resolve via /raw against mdImageBase, like
+        // markdown images (see the image renderer below).
+        // Forbid style/form elements and inline styles: this pipeline
+        // also renders agent chat output, and unscoped <style> or fixed-
+        // position overlays could restyle/spoof the whole app.
+        const clean = DOMPurify.sanitize(token.text || '', {
+          FORBID_TAGS: ['style', 'form', 'input', 'button', 'select', 'textarea', 'dialog'],
+          FORBID_ATTR: ['style'],
+        })
+        return clean.replace(/<img([^>]*?)\ssrc="([^"]*)"/gi, (m, pre, src) => {
+          if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('/') || src.startsWith('//')) return m
+          const path = normalizePath(mdImageBase ? `${mdImageBase}/${src}` : src)
+          return `<img${pre} src="/raw/${encodeURI(path)}"`
+        })
       },
       image(token) {
         // Images in markdown: absolute http(s)/data URLs pass through;

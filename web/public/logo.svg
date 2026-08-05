@@ -1,0 +1,22 @@
+<svg viewBox="0 0 120 120" width="120" height="120" xmlns="http://www.w3.org/2000/svg">
+  <!-- circuit traces -->
+  <g stroke="#863bff" stroke-width="1.5" fill="none" opacity="0.5">
+    <path d="M60 18 V34" />
+    <path d="M22 44 L36 52" />
+    <path d="M98 44 L84 52" />
+    <path d="M34 96 L44 84" />
+    <path d="M86 96 L76 84" />
+  </g>
+  <g fill="#863bff" opacity="0.5">
+    <circle cx="60" cy="14" r="4" />
+    <circle cx="18" cy="42" r="4" />
+    <circle cx="102" cy="42" r="4" />
+    <circle cx="31" cy="101" r="4" />
+    <circle cx="89" cy="101" r="4" />
+  </g>
+  <!-- pi glyph -->
+  <path
+    d="M34 44 h52 v8 h-10 v22 c0 6 3 8 8 8 v8 c-10 0 -16 -5 -16 -14 v-24 h-8 v26 c0 6 -2 10 -8 12 l-4 -7 c3 -1 4 -3 4 -7 v-24 h-8 z"
+    fill="#863bff"
+  />
+</svg>
