@@ -33,9 +33,13 @@
   })
 
   function escapeHtml(text) {
-    const div = document.createElement('div')
-    div.textContent = text
-    return div.innerHTML
+    return String(text).replace(/[&<>"']/g, (m) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[m]))
   }
 
   // GitHub-style alert blockquotes (> [!NOTE] / [!TIP] / [!IMPORTANT] /
@@ -75,6 +79,16 @@
       },
       html(token) {
         return escapeHtml(token.text || '')
+      },
+      link(token) {
+        // Drop links with unsafe schemes (javascript:, data:, ...) at
+        // render time; keep the link text. Covers chat messages, which
+        // have no click handler, unlike the file viewer (onMdClick).
+        const href = token.href ?? ''
+        if (/^[a-z][a-z0-9+.-]*:/i.test(href) && !/^(https?|mailto):/i.test(href)) {
+          return this.parser.parseInline(token.tokens)
+        }
+        return false // safe link: default rendering
       },
     },
   })
@@ -278,6 +292,10 @@
     const href = a.getAttribute('href') ?? ''
     if (!href || href.startsWith('#')) return // in-page anchor: native scroll
     if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
+      if (href.includes(':') && !/^(https?|mailto):/i.test(href)) {
+        e.preventDefault()
+        return // block unsafe schemes like javascript:, data:, etc.
+      }
       a.target = '_blank'
       a.rel = 'noopener noreferrer'
       return
@@ -361,7 +379,8 @@
   }
 
   function currentAssistant() {
-    return entries.findLast((e) => e.role === 'assistant') ?? null
+    const last = entries[entries.length - 1]
+    return last?.role === 'assistant' ? last : null
   }
 
   // Message navigator: the dots in the gap between chat and file panes.
@@ -411,7 +430,10 @@
     try {
       const r = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
         body: JSON.stringify(body ?? {}),
       })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)

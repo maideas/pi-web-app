@@ -97,7 +97,7 @@ class PiProcess:
                 self.pending.pop(cmd_id, None)
 
     def subscribe(self) -> queue.Queue:
-        q: queue.Queue = queue.Queue()
+        q: queue.Queue = queue.Queue(maxsize=1000)
         with self.subscribers_lock:
             self.subscribers.append(q)
         return q
@@ -110,14 +110,22 @@ class PiProcess:
     def broadcast(self, event: dict) -> None:
         with self.subscribers_lock:
             for q in self.subscribers:
-                q.put(event)
+                try:
+                    q.put_nowait(event)
+                except queue.Full:
+                    pass
 
     def stop(self) -> None:
         """Terminate the subprocess; the reader thread exits on EOF."""
         try:
             self.proc.terminate()
-        except OSError:
-            pass
+            self.proc.wait(timeout=2.0)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                self.proc.kill()
+                self.proc.wait(timeout=1.0)  # reap; avoid a zombie
+            except (OSError, subprocess.TimeoutExpired):
+                pass
 
     def _reader(self) -> None:
         """Read JSONL events from pi stdout. Split on \\n only (strict JSONL)."""
@@ -162,7 +170,9 @@ def load_projects() -> list[dict]:
 
 
 def save_projects(projects: list[dict]) -> None:
-    REGISTRY_PATH.write_text(json.dumps(projects, indent=2) + "\n")
+    tmp = REGISTRY_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(projects, indent=2) + "\n")
+    tmp.replace(REGISTRY_PATH)
 
 
 def seed_registry() -> list[dict]:
@@ -245,6 +255,13 @@ def project_root() -> Path:
 # ---------------------------------------------------------------------------
 
 
+@app.before_request
+def csrf_protection():
+    """Mitigate CSRF attacks: require custom X-Requested-With header on POSTs."""
+    if request.method in ("POST", "PUT", "DELETE", "PATCH") and request.headers.get("X-Requested-With") != "XMLHttpRequest":
+        return jsonify({"success": False, "error": "CSRF validation failed: missing custom header"}), 403
+
+
 @app.route("/events")
 def events():
     """Server-sent events stream of pi RPC events.
@@ -272,7 +289,7 @@ def events():
 
 @app.route("/prompt", methods=["POST"])
 def prompt():
-    body = request.get_json(force=True)
+    body = request.get_json(silent=True)
     if not isinstance(body, dict) or "message" not in body:
         return jsonify({"success": False, "error": "missing message"}), 400
     cmd = {"type": "prompt", "message": body["message"]}
@@ -281,8 +298,11 @@ def prompt():
     # Optional attached images: [{"data": base64, "mimeType": "image/png"}]
     images = body.get("images")
     if images:
-        if not isinstance(images, list):
-            return jsonify({"success": False, "error": "images must be a list"}), 400
+        if not isinstance(images, list) or not all(
+            isinstance(img, dict) and isinstance(img.get("data"), str) and isinstance(img.get("mimeType"), str)
+            for img in images
+        ):
+            return jsonify({"success": False, "error": "images must be a list of {data, mimeType}"}), 400
         cmd["images"] = [
             {"type": "image", "data": img["data"], "mimeType": img["mimeType"]}
             for img in images
@@ -324,7 +344,7 @@ def models():
 
 @app.route("/set_model", methods=["POST"])
 def set_model():
-    body = request.get_json(force=True)
+    body = request.get_json(silent=True)
     if not isinstance(body, dict) or "provider" not in body or "modelId" not in body:
         return jsonify({"success": False, "error": "missing provider or modelId"}), 400
     return jsonify(
@@ -341,7 +361,7 @@ def thinking_levels():
 
 @app.route("/set_thinking", methods=["POST"])
 def set_thinking():
-    body = request.get_json(force=True)
+    body = request.get_json(silent=True)
     if not isinstance(body, dict) or "level" not in body:
         return jsonify({"success": False, "error": "missing level"}), 400
     return jsonify(pi().rpc_request({"type": "set_thinking_level", "level": body["level"]}))
@@ -393,7 +413,7 @@ def sessions():
 
 @app.route("/switch_session", methods=["POST"])
 def switch_session():
-    body = request.get_json(force=True)
+    body = request.get_json(silent=True)
     if not isinstance(body, dict) or "path" not in body:
         return jsonify({"success": False, "error": "missing path"}), 400
     return jsonify(pi().rpc_request({"type": "switch_session", "sessionPath": body["path"]}))
@@ -407,7 +427,7 @@ def commands():
 
 @app.route("/compact", methods=["POST"])
 def compact():
-    body = request.get_json(force=True, silent=True)
+    body = request.get_json(silent=True)
     cmd = {"type": "compact"}
     if isinstance(body, dict) and body.get("customInstructions"):
         cmd["customInstructions"] = body["customInstructions"]
@@ -416,7 +436,7 @@ def compact():
 
 @app.route("/set_session_name", methods=["POST"])
 def set_session_name():
-    body = request.get_json(force=True)
+    body = request.get_json(silent=True)
     if not isinstance(body, dict) or "name" not in body:
         return jsonify({"success": False, "error": "missing name"}), 400
     return jsonify(pi().rpc_request({"type": "set_session_name", "name": body["name"]}))
@@ -430,7 +450,7 @@ def export_html():
 @app.route("/ui-response", methods=["POST"])
 def ui_response():
     """Relay an extension_ui_response from the browser to pi."""
-    body = request.get_json(force=True)
+    body = request.get_json(silent=True)
     if not isinstance(body, dict) or body.get("type") != "extension_ui_response" or not body.get("id"):
         return jsonify({"success": False, "error": "invalid body"}), 400
     pi().send_command(body)
@@ -494,7 +514,7 @@ def auto_name():
     while the one-shot call runs, the title is discarded instead of
     being applied to the wrong session.
     """
-    body = request.get_json(force=True, silent=True)
+    body = request.get_json(silent=True)
     force = isinstance(body, dict) and bool(body.get("force"))
     if not auto_name_lock.acquire(blocking=False):
         return jsonify({"success": False, "error": "naming already in progress"})
@@ -588,7 +608,7 @@ def create_project():
     otherwise it is created (with optional `git init`). The project name
     is the leaf directory name.
     """
-    body = request.get_json(force=True)
+    body = request.get_json(silent=True)
     if not isinstance(body, dict) or not body.get("path"):
         return jsonify({"success": False, "error": "missing path"}), 400
     p = Path(body["path"]).expanduser()
@@ -661,7 +681,7 @@ def set_last_file(pid):
     Stored as `lastFile` in the registry; the frontend restores it when
     the project is opened (falling back to README.md).
     """
-    body = request.get_json(force=True, silent=True)
+    body = request.get_json(silent=True)
     if not isinstance(body, dict) or not isinstance(body.get("path"), str):
         return jsonify({"success": False, "error": "missing path"}), 400
     with switch_lock:
