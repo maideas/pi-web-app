@@ -16,6 +16,7 @@ and its latest session resumed.
 """
 
 import json
+import os
 import queue
 import subprocess
 import threading
@@ -835,4 +836,4 @@ def index():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, threaded=True)
+    app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5000")), threaded=True)

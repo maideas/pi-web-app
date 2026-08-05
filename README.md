@@ -20,7 +20,7 @@ Features:
 - Multiple projects and sessions: switch projects, restore the last
   session and open file; sessions are auto-named from chat content
 - Slash commands with autocomplete, mapped to their RPC equivalents
-- Project file browser with markdown preview and download
+- Project file browser with markdown and image preview and download
 - Light, cream, and dark themes
 
 **Limitation (by design):** single-user. One pi subprocess and one shared
@@ -56,10 +56,13 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/index.html`](web/index.html) | Vite HTML entry |
 | [`web/vite.config.js`](web/vite.config.js) | Vite config; dev-server proxy for all backend endpoints |
 | [`web/jsconfig.json`](web/jsconfig.json) | JS type-checking config (checkJs) for the frontend |
-| [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, highlight.js) |
+| [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, dompurify, highlight.js) |
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
 | [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (first increment implemented) |
 | [`theme-preview.md`](theme-preview.md) | Demo document for comparing the themes in the file viewer |
+| [`code-and-security-review.md`](code-and-security-review.md) | Code and security review report (findings since remediated) |
+| [`fable-code-and-security-review.md`](fable-code-and-security-review.md) | Post-fix verification review of the remediations |
+| [`LICENSE`](LICENSE) | License |
 | [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask) |
 | [`web/public/`](web/public/) | Static assets (favicon, logo, icons) copied into `dist/` |
 | [`AGENTS.md`](AGENTS.md) | Project conventions for coding agents |
@@ -120,11 +123,14 @@ File browser and static hosting:
 |---|---|---|
 | `/api/list?path=` | GET | List a directory under the project root |
 | `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB) |
+| `/raw/<path>` | GET | Serve a file inline (image preview; nosniff + CSP sandbox) |
 | `/download/<path>` | GET | Download a file |
 | `/` | GET | Serve the built SPA from `web/dist/` |
 
-Paths for `/api/list`, `/api/file`, and `/download/*` are confined to
-the current project's root (traversal attempts get 403). POST endpoints validate their JSON bodies and
+Paths for `/api/list`, `/api/file`, `/raw/*`, and `/download/*` are confined to
+the current project's root (traversal attempts get 403). POST endpoints require an
+`X-Requested-With: XMLHttpRequest` header (CSRF protection, 403 otherwise),
+validate their JSON bodies and
 return 400 on missing fields; RPC calls time out after 30 s with a
 `{"success": false, "error": "timeout"}` response.
 
@@ -140,7 +146,7 @@ pip install -r requirements.txt
 # Frontend build
 cd web && npm install && npm run build && cd ..
 
-# Run (serves the UI at http://127.0.0.1:5000)
+# Run (serves the UI at http://127.0.0.1:5000; override with PORT=...)
 python app.py
 ```
 
