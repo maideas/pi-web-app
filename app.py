@@ -29,7 +29,7 @@ from flask import abort as http_abort
 PI_CMD = ["pi", "--mode", "rpc"]
 DIST_DIR = "web/dist"
 # Auto-naming threshold: combined length of the session's user messages.
-MIN_USER_CHARS = 40
+MIN_USER_CHARS = 120
 APP_ROOT = Path(__file__).resolve().parent
 REGISTRY_PATH = APP_ROOT / "projects.json"
 
