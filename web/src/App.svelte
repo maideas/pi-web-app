@@ -1706,25 +1706,31 @@
           </div>
         </div>
       {:else if entry.role === 'assistant'}
-        <div class="msgrow assistant">
-          <div class="msg assistant md">
-            {#if entry.thinking}
-              <details class="thinking-block" open>
-                <summary>thinking</summary>
-                <pre>{entry.thinking}</pre>
-              </details>
-            {/if}
-            {@html renderMarkdown(entry.text)}
+        {#if entry.thinking}
+          <div class="msgrow assistant thinkrow">
+            <details class="thinking-block" open>
+              <summary>thinking</summary>
+              <pre>{entry.thinking}</pre>
+            </details>
+            <div class="copycol">
+              {#if entry.thinking?.trim()}
+                <button class="msg-copy think" title="Copy thinking" aria-label="Copy thinking" onclick={(e) => copyText(entry.thinking, e.currentTarget)}></button>
+              {/if}
+            </div>
           </div>
-          <div class="copycol">
-            {#if entry.thinking?.trim()}
-              <button class="msg-copy think" title="Copy thinking" aria-label="Copy thinking" onclick={(e) => copyText(entry.thinking, e.currentTarget)}></button>
-            {/if}
-            {#if entry.text?.trim()}
-              <button class="msg-copy" title="Copy message as markdown" aria-label="Copy message as markdown" onclick={(e) => copyText(entry.text, e.currentTarget)}></button>
-            {/if}
+        {/if}
+        {#if entry.text || !entry.thinking}
+          <div class="msgrow assistant">
+            <div class="msg assistant md">
+              {@html renderMarkdown(entry.text)}
+            </div>
+            <div class="copycol">
+              {#if entry.text?.trim()}
+                <button class="msg-copy" title="Copy message as markdown" aria-label="Copy message as markdown" onclick={(e) => copyText(entry.text, e.currentTarget)}></button>
+              {/if}
+            </div>
           </div>
-        </div>
+        {/if}
       {:else}
         <details class="msg tool" class:error={entry.isError} class:ok={entry.done && !entry.isError} open>
           <summary>
