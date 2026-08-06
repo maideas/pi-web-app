@@ -34,6 +34,19 @@ DIST_DIR = "web/dist"
 MIN_USER_CHARS = 120
 APP_ROOT = Path(__file__).resolve().parent
 REGISTRY_PATH = APP_ROOT / "projects.json"
+# Everything the web UI may touch (projects, file browser, downloads)
+# lives below this directory. Defaults to the parent of the app dir;
+# override with PI_WEB_WORKSPACE. This confines the *web endpoints* —
+# it is not a sandbox for the pi agent itself, which runs with full
+# user privileges in the project cwd.
+WORKSPACE_ROOT = Path(
+    os.environ.get("PI_WEB_WORKSPACE", APP_ROOT.parent)
+).resolve()
+
+
+def contained(p: Path, base: Path = WORKSPACE_ROOT) -> bool:
+    """True if p (already resolved) is base or lies below it."""
+    return p == base or p.is_relative_to(base)
 
 app = Flask(__name__, static_folder=DIST_DIR, static_url_path="")
 # Reject requests whose Host header is not a local name: a remote page
@@ -216,18 +229,28 @@ def save_projects(projects: list[dict]) -> None:
     tmp.replace(REGISTRY_PATH)
 
 
+def new_project_entry(path: Path) -> dict:
+    return {
+        "id": uuid.uuid4().hex[:8],
+        "name": path.name,
+        "path": str(path),
+        "created": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def seed_registry() -> list[dict]:
     """First run: the app itself is the default project (dogfooding)."""
-    projects = [
-        {
-            "id": uuid.uuid4().hex[:8],
-            "name": APP_ROOT.name,
-            "path": str(APP_ROOT),
-            "created": datetime.now(timezone.utc).isoformat(),
-        }
-    ]
+    projects = [new_project_entry(APP_ROOT)]
     save_projects(projects)
     return projects
+
+
+def project_outside_workspace(entry: dict) -> bool:
+    """True if a registry entry escapes WORKSPACE_ROOT (stale or hand-edited)."""
+    try:
+        return not contained(Path(entry["path"]).expanduser().resolve())
+    except OSError:
+        return True
 
 
 def resume_latest_session(p: PiProcess) -> None:
@@ -259,10 +282,33 @@ def most_recent_project(projects: list[dict]) -> dict:
     return max(projects, key=lambda p: p.get("lastOpened") or "")
 
 
+def startup_project(projects: list[dict]) -> dict:
+    """The project to open on startup, confined to the workspace.
+
+    Out-of-workspace registry entries (stale or hand-edited) are never
+    opened; if no entry qualifies, the app dir itself is (re-)registered
+    as a safe fallback.
+    """
+    inside = [p for p in projects if not project_outside_workspace(p)]
+    if inside:
+        return most_recent_project(inside)
+    if not contained(APP_ROOT):
+        raise SystemExit(
+            f"no registered project inside workspace {WORKSPACE_ROOT} and the "
+            "app dir is outside it too; register a project inside the "
+            "workspace or adjust PI_WEB_WORKSPACE"
+        )
+    log.warning("no project inside workspace %s; falling back to app dir", WORKSPACE_ROOT)
+    entry = new_project_entry(APP_ROOT)
+    projects.append(entry)
+    save_projects(projects)
+    return entry
+
+
 projects = load_projects() or seed_registry()
 
 # Current project + its pi process. Guarded by switch_lock during switches.
-current: dict = {"project": most_recent_project(projects), "pi": None}
+current: dict = {"project": startup_project(projects), "pi": None}
 current["pi"] = PiProcess(current["project"]["path"])
 resume_latest_session(current["pi"])
 switch_lock = threading.Lock()
@@ -572,11 +618,11 @@ def api_dirs():
     """Directory picker for the new-project dialog.
 
     Lists subdirectories (only directories, dotdirs excluded) confined
-    to the parent directory of the current project root.
+    to WORKSPACE_ROOT — the same scope create_project accepts.
     """
-    base = project_root().parent
+    base = WORKSPACE_ROOT
     d = (base / request.args.get("path", "").lstrip("/")).resolve()
-    if d != base and base not in d.parents:
+    if not contained(d, base):
         http_abort(403)
     if not d.is_dir():
         http_abort(404)
@@ -714,7 +760,13 @@ def list_projects():
     return jsonify(
         {
             "projects": [
-                {**p, "current": p["id"] == current["project"]["id"]}
+                {
+                    **p,
+                    "current": p["id"] == current["project"]["id"],
+                    # Flagged (not hidden) so the UI can grey them out
+                    # and the user can still detach them.
+                    "outsideWorkspace": project_outside_workspace(p),
+                }
                 for p in load_projects()
             ]
         }
@@ -737,6 +789,11 @@ def create_project():
         p = p.resolve(strict=False)
     except OSError:
         return jsonify({"success": False, "error": "invalid path"}), 400
+    # Containment after resolve(): `..` and symlinks are already
+    # collapsed, so a workspace-internal symlink pointing outside is
+    # rejected too. The workspace root itself is not a valid project.
+    if p == WORKSPACE_ROOT or not contained(p):
+        return jsonify({"success": False, "error": "path outside workspace"}), 403
     if p.exists():
         if not p.is_dir():
             return jsonify({"success": False, "error": "not a directory"}), 400
@@ -751,12 +808,7 @@ def create_project():
     for existing in projects:
         if existing["path"] == str(p):
             return jsonify({"success": False, "error": "already registered"}), 409
-    entry = {
-        "id": uuid.uuid4().hex[:8],
-        "name": p.name,
-        "path": str(p),
-        "created": datetime.now(timezone.utc).isoformat(),
-    }
+    entry = new_project_entry(p)
     projects.append(entry)
     save_projects(projects)
     return jsonify({"success": True, "project": entry})
@@ -777,6 +829,8 @@ def open_project(pid):
         return jsonify({"success": False, "error": "unknown project"}), 404
     if not Path(entry["path"]).is_dir():
         return jsonify({"success": False, "error": "project directory is gone"}), 400
+    if project_outside_workspace(entry):
+        return jsonify({"success": False, "error": "project is outside the workspace"}), 403
     with switch_lock:
         if current["project"]["id"] == pid:
             return jsonify({"success": True, "project": entry})
@@ -937,10 +991,16 @@ def git_file_status(statuses: dict[str, str], rel: str) -> str | None:
 
 
 def safe_path(rel: str) -> Path:
-    """Resolve rel under the current project root; reject escapes."""
-    root = project_root()
+    """Resolve rel under the current project root; reject escapes.
+
+    Defense-in-depth: also rejects a project root that itself escaped
+    the workspace (bad registry entry via some future code path).
+    """
+    root = project_root().resolve()
+    if not contained(root):
+        http_abort(403)
     p = (root / rel.lstrip("/")).resolve()
-    if p != root and root not in p.parents:
+    if not contained(p, root):
         http_abort(403)
     return p
 
@@ -1064,7 +1124,7 @@ def raw(rel):
     """Serve a project file inline (image preview in the file viewer).
 
     Unlike /download this sends the real Content-Type so <img> tags can
-    render it. `CSP: sandbox allow-scripts` keeps directly-opened files
+    render it. `CSP: sandbox allow-scripts allow-forms` keeps directly-opened files
     (SVG, HTML) out of the app's origin — no cookies/storage/API access —
     while still letting the HTML preview iframe run the page's own JS
     (the stricter of header and iframe sandbox attribute wins, so plain
@@ -1075,7 +1135,7 @@ def raw(rel):
         http_abort(404)
     resp = send_from_directory(project_root(), p.relative_to(project_root()))
     resp.headers["X-Content-Type-Options"] = "nosniff"
-    resp.headers["Content-Security-Policy"] = "sandbox allow-scripts"
+    resp.headers["Content-Security-Policy"] = "sandbox allow-scripts allow-forms"
     return resp
 
 

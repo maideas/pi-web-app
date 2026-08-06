@@ -414,6 +414,13 @@ aside {
   text-align: left;
 }
 
+.mp-outside .mp-name,
+.mp-outside .mp-path {
+  color: var(--muted);
+  font-weight: 400;
+  text-decoration: line-through;
+}
+
 .mp-row button {
   flex-shrink: 0;
   height: 2rem;

@@ -35,6 +35,16 @@ drive the agent with full tool access. Do not port-forward or reverse-proxy
 it without adding authentication. Host-header validation (`TRUSTED_HOSTS`)
 protects against DNS-rebinding attacks from remote web pages.
 
+**Workspace containment:** all web endpoints that touch the filesystem
+(project registration, directory picker, file browser, preview, diff,
+delete, download) are confined to a workspace root — the parent
+directory of the app by default, overridable with the
+`PI_WEB_WORKSPACE` environment variable. Registry entries outside the
+workspace (stale or hand-edited) are flagged in the UI, cannot be
+opened, and can only be detached. This is an honest UI boundary, not a
+sandbox for the agent: pi itself runs with full user privileges and its
+bash tool can read and write anywhere the OS user can.
+
 ## Architecture
 
 ```
@@ -120,10 +130,10 @@ Projects:
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/projects` | GET | List registered projects (marks the current one) |
-| `/api/dirs?path=` | GET | Directory picker for the new-project dialog: directories only, confined to the parent of the current project root |
-| `/api/projects` | POST | Register an existing directory or create a new one (`path`, optional `gitInit`); the project name is the leaf directory name |
-| `/api/projects/<id>/open` | POST | Switch the active project: respawn pi with the project dir as cwd |
+| `/api/projects` | GET | List registered projects (marks the current one; flags entries outside the workspace) |
+| `/api/dirs?path=` | GET | Directory picker for the new-project dialog: directories only, confined to the workspace root |
+| `/api/projects` | POST | Register an existing directory or create a new one (`path`, optional `gitInit`); the project name is the leaf directory name; the path must lie inside the workspace (403 otherwise) |
+| `/api/projects/<id>/open` | POST | Switch the active project: respawn pi with the project dir as cwd (403 if the project is outside the workspace) |
 | `/api/projects/<id>/detach` | POST | Remove a project from the registry (directory stays on disk; refuses the current project) |
 | `/api/projects/<id>/last-file` | POST | Remember the project's open viewer file (`lastFile`) |
 
@@ -140,7 +150,9 @@ File browser and static hosting:
 | `/` | GET | Serve the built SPA from `web/dist/` |
 
 Paths for `/api/list`, `/api/file`, `/api/diff`, `/api/file/delete`, `/raw/*`, and `/download/*` are confined to
-the current project's root (traversal attempts get 403). POST endpoints require an
+the current project's root, which itself must lie inside the workspace
+root (traversal attempts get 403; symlinks are resolved before the
+containment check). POST endpoints require an
 `X-Requested-With: XMLHttpRequest` header (CSRF protection, 403 otherwise),
 validate their JSON bodies and
 return 400 on missing fields; RPC calls time out after 30 s with a
@@ -159,6 +171,8 @@ pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 
 # Run (serves the UI at http://127.0.0.1:5000; override with PORT=...)
+# Optional: PI_WEB_WORKSPACE=/path/to/workspace confines projects and
+# the file browser to that directory (default: parent of the app dir).
 python app.py
 ```
 

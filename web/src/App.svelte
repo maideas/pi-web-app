@@ -1418,7 +1418,9 @@
       <div class="tgroup">
       <select value={currentProjectId} onchange={onProjectChange} title="Project">
         {#each projects as p (p.id)}
-          <option value={p.id}>{p.name}</option>
+          <option value={p.id} disabled={p.outsideWorkspace}>
+            {p.name}{p.outsideWorkspace ? ' (outside workspace)' : ''}
+          </option>
         {/each}
       </select>
       <button onclick={toggleNewProject} title="New project">add</button>
@@ -1508,8 +1510,8 @@
         </div>
         <div class="np-list">
           {#each projects as p (p.id)}
-            <div class="mp-row">
-              <span class="mp-name">{p.name}{p.current ? ' (current)' : ''}</span>
+            <div class="mp-row" class:mp-outside={p.outsideWorkspace}>
+              <span class="mp-name">{p.name}{p.current ? ' (current)' : ''}{p.outsideWorkspace ? ' — outside workspace' : ''}</span>
               <span class="mp-path" title={p.path}>{p.path}</span>
               <button
                 onclick={() => detachProject(p)}
@@ -1775,7 +1777,7 @@
             <div class="filecontent md" onclick={onMdClick}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'))}</div>
           {:else if selectedFile.text !== null && isHtml(selectedFile.path) && !plainView}
             <div class="filecontent html">
-              <iframe src={`/raw/${encodeURI(selectedFile.path)}?v=${selectedFile.v}`} sandbox="allow-scripts" title={selectedFile.path}></iframe>
+              <iframe src={`/raw/${encodeURI(selectedFile.path)}?v=${selectedFile.v}`} sandbox="allow-scripts allow-forms" title={selectedFile.path}></iframe>
             </div>
           {:else if selectedFile.text !== null}
             <pre class="filecontent hljs"><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>
