@@ -76,7 +76,7 @@
           : escapeHtml(text)
         // Language hint shown as a muted label above the block (via CSS)
         const hint = lang ? ` data-lang="${escapeHtml(lang)}"` : ''
-        return `<pre${hint}><code class="hljs">${html}</code></pre>`
+        return `<pre${hint}><button class="code-copy" type="button" title="Copy code" aria-label="Copy code"></button><code class="hljs">${html}</code></pre>`
       },
       html(token) {
         // Raw HTML embedded in markdown (e.g. <p align="center"> for a
@@ -494,6 +494,14 @@
   // `base`: directory that relative links resolve against — '' (project
   // root) for chat messages, the file's own directory for the viewer.
   function onMdClick(e, base = '') {
+    // Copy button injected into rendered code blocks (chat + md viewer);
+    // handled here via delegation because the blocks come from {@html}.
+    const copyBtn = e.target.closest('.code-copy')
+    if (copyBtn) {
+      e.preventDefault()
+      copyText(copyBtn.parentElement?.querySelector('code')?.innerText ?? '', copyBtn)
+      return
+    }
     const a = e.target.closest('a')
     if (!a) return
     const href = a.getAttribute('href') ?? ''
@@ -656,6 +664,88 @@
     return t.length > n ? t.slice(0, n) + '…' : t
   }
 
+  // Copy text to the clipboard with a brief ✓ feedback on the button.
+  // navigator.clipboard needs a secure context (localhost qualifies);
+  // fall back to the legacy execCommand path elsewhere.
+  async function copyText(text, btn) {
+    try {
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        ta.remove()
+      }
+    } catch (err) {
+      console.error('copy failed', err)
+      return
+    }
+    if (btn) {
+      btn.classList.add('copied')
+      setTimeout(() => btn.classList.remove('copied'), 1200)
+    }
+  }
+
+  // ----- prompt history recall (shell-style) -----
+  // ArrowUp with the caret on the first input line recalls previously
+  // sent prompts (newest first); ArrowDown moves forward and finally
+  // restores the unsent draft. Persisted per project in localStorage.
+  const HISTORY_MAX = 100
+  let promptHistory = []
+  let histIndex = -1 // -1 = not browsing
+  let histDraft = ''
+
+  const historyKey = () => `promptHistory:${currentProjectId || 'default'}`
+
+  function loadPromptHistory() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(historyKey()) ?? '[]')
+      promptHistory = Array.isArray(parsed) ? parsed.filter((t) => typeof t === 'string') : []
+    } catch {
+      promptHistory = []
+    }
+    histIndex = -1
+  }
+
+  function pushPromptHistory(text) {
+    if (!text) return
+    if (promptHistory[promptHistory.length - 1] !== text) {
+      promptHistory.push(text)
+      if (promptHistory.length > HISTORY_MAX) promptHistory = promptHistory.slice(-HISTORY_MAX)
+      try {
+        localStorage.setItem(historyKey(), JSON.stringify(promptHistory))
+      } catch (err) {
+        console.error('failed to persist prompt history', err)
+      }
+    }
+    histIndex = -1
+  }
+
+  // dir: -1 older, +1 newer. Returns true when the key was consumed.
+  function recallHistory(dir) {
+    if (!promptHistory.length) return false
+    if (histIndex === -1) {
+      if (dir > 0) return false
+      histDraft = input
+      histIndex = promptHistory.length
+    }
+    const next = histIndex + dir
+    if (next < 0) return true // already at the oldest entry
+    if (next >= promptHistory.length) {
+      histIndex = -1
+      input = histDraft
+    } else {
+      histIndex = next
+      input = promptHistory[histIndex]
+    }
+    // Caret to the end once the textarea has re-rendered.
+    tick().then(() => inputEl?.setSelectionRange(input.length, input.length))
+    return true
+  }
+
   async function apiGet(url) {
     try {
       const r = await fetch(url)
@@ -768,6 +858,7 @@
       loadCommands(),
       loadProjects(),
     ])
+    loadPromptHistory() // per project; needs currentProjectId from loadProjects
     // Restore the project's remembered viewer file, README as fallback.
     const remembered = projects.find((p) => p.current)?.lastFile ?? 'README.md'
     let f = await loadViewerFile(remembered)
@@ -1222,6 +1313,7 @@
 
   async function sendPrompt() {
     const trimmed = input.trim()
+    if (trimmed) pushPromptHistory(trimmed)
     if (trimmed.startsWith('/')) {
       input = ''
       await handleSlashCommand(trimmed)
@@ -1396,6 +1488,16 @@
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendPrompt()
+      return
+    }
+    // Prompt history: only when the caret can't move within the text
+    // in that direction (first line for up, last line for down), so
+    // multi-line editing keeps its native arrow-key behavior.
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const onFirstLine = !input.slice(0, inputEl.selectionStart).includes('\n')
+      const onLastLine = !input.slice(inputEl.selectionEnd).includes('\n')
+      if (e.key === 'ArrowUp' && onFirstLine && recallHistory(-1)) e.preventDefault()
+      else if (e.key === 'ArrowDown' && histIndex !== -1 && onLastLine && recallHistory(1)) e.preventDefault()
     }
   }
 
@@ -1588,25 +1690,39 @@
       {#if entry.role === 'system'}
         <div class="msg system">{entry.text}</div>
       {:else if entry.role === 'user'}
-        <div class="msg user" data-idx={i}>
-          {entry.text}
-          {#if entry.images?.length}
-            <div class="imgs">
-              {#each entry.images as src}
-                <img {src} alt="attachment" />
-              {/each}
-            </div>
-          {/if}
+        <div class="msgrow user">
+          <div class="msg user" data-idx={i}>{entry.text}
+            {#if entry.images?.length}
+              <div class="imgs">
+                {#each entry.images as src}
+                  <img {src} alt="attachment" />
+                {/each}
+              </div>
+            {/if}
+          </div>
+          <div class="copycol">
+            <button class="msg-copy" title="Copy message" aria-label="Copy message" onclick={(e) => copyText(entry.text, e.currentTarget)}></button>
+          </div>
         </div>
       {:else if entry.role === 'assistant'}
-        <div class="msg assistant md">
-          {#if entry.thinking}
-            <details class="thinking-block" open>
-              <summary>thinking</summary>
-              <pre>{entry.thinking}</pre>
-            </details>
-          {/if}
-          {@html renderMarkdown(entry.text)}
+        <div class="msgrow assistant">
+          <div class="msg assistant md">
+            {#if entry.thinking}
+              <details class="thinking-block" open>
+                <summary>thinking</summary>
+                <pre>{entry.thinking}</pre>
+              </details>
+            {/if}
+            {@html renderMarkdown(entry.text)}
+          </div>
+          <div class="copycol">
+            {#if entry.thinking?.trim()}
+              <button class="msg-copy think" title="Copy thinking" aria-label="Copy thinking" onclick={(e) => copyText(entry.thinking, e.currentTarget)}></button>
+            {/if}
+            {#if entry.text?.trim()}
+              <button class="msg-copy" title="Copy message as markdown" aria-label="Copy message as markdown" onclick={(e) => copyText(entry.text, e.currentTarget)}></button>
+            {/if}
+          </div>
         </div>
       {:else}
         <details class="msg tool" class:error={entry.isError} class:ok={entry.done && !entry.isError} open>

@@ -571,8 +571,97 @@ aside {
   overflow-wrap: break-word;
 }
 
+/* Message rows: bubble plus a copy-button column pinned to the right
+   edge of the chat, so all copy buttons line up vertically. */
+.msgrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.msgrow.assistant .msg {
+  margin-right: auto; /* bubble left, buttons at the right edge */
+}
+
+.msgrow.user {
+  justify-content: flex-end;
+}
+
+.copycol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: none;
+}
+
+/* Copy buttons: per-message (.msg-copy, always visible in the right
+   column) and per-code-block (.code-copy, revealed on hover); brief ✓
+   feedback via the .copied class. */
+.msg-copy,
+.code-copy {
+  padding: 0.15rem 0.45rem;
+  font-size: 1rem;
+  line-height: 1.3;
+  font-family: system-ui, sans-serif;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.code-copy {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.8rem;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+/* Copy icon (two overlapping rounded squares, octicon-style outline),
+   drawn as a currentColor mask so it follows the theme colors. */
+.msg-copy::before,
+.code-copy::before {
+  content: '';
+  display: block;
+  width: 1em;
+  height: 1em;
+  margin: 0.15em 0;
+  background-color: currentColor;
+  mask: var(--copy-icon) center / contain no-repeat;
+  -webkit-mask: var(--copy-icon) center / contain no-repeat;
+}
+
+:root {
+  --copy-icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z'/><path d='M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z'/></svg>");
+}
+
+.msg-copy.copied::before,
+.code-copy.copied::before {
+  content: '✓';
+  width: auto;
+  height: auto;
+  margin: 0;
+  background-color: transparent;
+  mask: none;
+  -webkit-mask: none;
+  color: var(--ok);
+}
+
+.md pre:hover > .code-copy,
+.code-copy:focus-visible {
+  opacity: 1;
+}
+
+.msg-copy:hover,
+.code-copy:hover {
+  color: var(--fg);
+}
+
 .msg.user {
-  align-self: flex-end;
   background: var(--user-bg);
   color: var(--user-fg);
   max-width: 80%;
@@ -580,7 +669,6 @@ aside {
 }
 
 .msg.assistant {
-  align-self: flex-start;
   background: var(--panel);
   max-width: 90%;
 }
@@ -599,6 +687,7 @@ aside {
 }
 
 .md pre {
+  position: relative; /* anchors the code copy button */
   margin: 0.85em 0;
   background: var(--code-bg);
   padding: 0.6rem;
