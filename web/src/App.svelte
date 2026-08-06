@@ -112,8 +112,8 @@
       },
       link(token) {
         // Drop links with unsafe schemes (javascript:, data:, ...) at
-        // render time; keep the link text. Covers chat messages, which
-        // have no click handler, unlike the file viewer (onMdClick).
+        // render time; keep the link text. Defense in depth on top of
+        // the onMdClick handlers on chat and file viewer.
         const href = token.href ?? ''
         if (/^[a-z][a-z0-9+.-]*:/i.test(href) && !/^(https?|mailto):/i.test(href)) {
           return this.parser.parseInline(token.tokens)
@@ -457,7 +457,8 @@
     dirEntries = resp.entries ?? []
   }
 
-  // Link clicks inside rendered markdown previews. Relative file links
+  // Link clicks inside rendered markdown (chat and file viewer).
+  // Relative file links
   // would otherwise resolve against the app page URL (e.g. /app.py) and
   // navigate the SPA away to an invalid endpoint; instead load them in
   // the viewer, resolved against the markdown file's own directory.
@@ -490,7 +491,9 @@
     }
   }
 
-  function onMdClick(e) {
+  // `base`: directory that relative links resolve against — '' (project
+  // root) for chat messages, the file's own directory for the viewer.
+  function onMdClick(e, base = '') {
     const a = e.target.closest('a')
     if (!a) return
     const href = a.getAttribute('href') ?? ''
@@ -507,7 +510,6 @@
     e.preventDefault()
     const [pathPart] = href.split('#')
     if (!pathPart) return
-    const base = selectedFile.path.split('/').slice(0, -1).join('/')
     openLinkedFile(normalizePath(base ? `${base}/${pathPart}` : pathPart))
   }
 
@@ -1560,7 +1562,8 @@
   <div class="chat-body" onscrollcapture={updateFades}>
     <div class="fade fade-top" class:visible={chatFadeTop}></div>
     <div class="fade fade-bottom" class:visible={chatFadeBottom}></div>
-  <div class="chat" bind:this={chatEl}>
+  <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+  <div class="chat" bind:this={chatEl} onclick={onMdClick}>
     {#if entries.length === 0}
       <div class="chat-empty" aria-hidden="true">
         <svg class="logo" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
@@ -1774,7 +1777,7 @@
           {:else if selectedFile.text !== null && isMarkdown(selectedFile.path) && !plainView}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="filecontent md" onclick={onMdClick}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'))}</div>
+            <div class="filecontent md" onclick={(e) => onMdClick(e, selectedFile.path.split('/').slice(0, -1).join('/'))}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'))}</div>
           {:else if selectedFile.text !== null && isHtml(selectedFile.path) && !plainView}
             <div class="filecontent html">
               <iframe src={`/raw/${encodeURI(selectedFile.path)}?v=${selectedFile.v}`} sandbox="allow-scripts allow-forms" title={selectedFile.path}></iframe>
