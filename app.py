@@ -1001,15 +1001,18 @@ def raw(rel):
     """Serve a project file inline (image preview in the file viewer).
 
     Unlike /download this sends the real Content-Type so <img> tags can
-    render it. `CSP: sandbox` keeps scripts in directly-opened SVGs from
-    running in the app's origin; as an <img> source they are inert anyway.
+    render it. `CSP: sandbox allow-scripts` keeps directly-opened files
+    (SVG, HTML) out of the app's origin — no cookies/storage/API access —
+    while still letting the HTML preview iframe run the page's own JS
+    (the stricter of header and iframe sandbox attribute wins, so plain
+    `sandbox` here would override the iframe's allow-scripts).
     """
     p = safe_path(rel)  # containment check
     if not p.is_file():
         http_abort(404)
     resp = send_from_directory(project_root(), p.relative_to(project_root()))
     resp.headers["X-Content-Type-Options"] = "nosniff"
-    resp.headers["Content-Security-Policy"] = "sandbox"
+    resp.headers["Content-Security-Policy"] = "sandbox allow-scripts"
     return resp
 
 

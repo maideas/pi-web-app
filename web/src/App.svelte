@@ -385,12 +385,13 @@
     if (diffView) return diffView.diff ? 'diff' : diffView.error ? 'diff · error' : 'diff · no changes'
     if (selectedFile.image) return 'image'
     if (selectedFile.text === null) return 'binary'
-    if (isMarkdown(selectedFile.path)) return mdPlain ? 'markdown · plain' : 'markdown · rendered'
+    if (isMarkdown(selectedFile.path)) return plainView ? 'markdown · plain' : 'markdown · rendered'
+    if (isHtml(selectedFile.path)) return plainView ? 'html · plain' : 'html · rendered'
     return 'source'
   })
 
-  // Toggle between rendered and plain (source) markdown in the viewer.
-  let mdPlain = $state(false)
+  // Toggle between rendered and plain (source) view for markdown/HTML.
+  let plainView = $state(false)
   function pushViewerHistory(prevPath, newPath) {
     if (prevPath && prevPath !== newPath) {
       viewerHistory.push(prevPath)
@@ -428,6 +429,11 @@
   // Markdown files are rendered in the viewer with the same marked +
   // highlight.js pipeline as the chat, so both look identical.
   const isMarkdown = (path) => /\.md|\.markdown$/i.test(path ?? '')
+  // HTML files are rendered in a sandboxed iframe via /raw so relative
+  // assets resolve. `allow-scripts` (without allow-same-origin) lets
+  // the page's own JS run in an opaque origin — no access to the app's
+  // cookies, storage, or API.
+  const isHtml = (path) => /\.x?html?$/i.test(path ?? '')
   // Image files are rendered as <img> via /raw (scaled to fit the
   // viewer, see .filecontent.image) instead of the binary placeholder.
   const isImage = (path) => /\.(png|jpe?g|gif|webp|bmp|ico|avif|svg)$/i.test(path ?? '')
@@ -438,7 +444,8 @@
   async function loadViewerFile(path) {
     const f = await apiGet(`/api/file?path=${encodeURIComponent(path)}`)
     if (!f.path || f.error) return f
-    return isImage(f.path) ? { path: f.path, image: true, v: Date.now() } : f
+    // `v` also cache-busts the HTML preview iframe after agent runs.
+    return isImage(f.path) ? { path: f.path, image: true, v: Date.now() } : { ...f, v: Date.now() }
   }
   let toolsUsedInRun = $state(false)
   let autoNaming = $state(false)
@@ -1698,7 +1705,7 @@
           <div class="head-left">
             <button class="nav" title="back" disabled={viewerHistory.length === 0} onclick={() => viewerGo(-1)}>&lt;</button>
             <button class="nav" title="forward" disabled={viewerFuture.length === 0} onclick={() => viewerGo(1)}>&gt;</button>
-            <button class="dl" title={mdPlain ? 'show rendered markdown' : 'show plain markdown'} disabled={!isMarkdown(selectedFile.path) || selectedFile.image || selectedFile.text === null} onclick={() => (mdPlain = !mdPlain)}>{mdPlain ? 'rendered' : 'plain'}</button>
+            <button class="dl" title={plainView ? 'show rendered view' : 'show plain source'} disabled={!(isMarkdown(selectedFile.path) || isHtml(selectedFile.path)) || selectedFile.image || selectedFile.text === null} onclick={() => (plainView = !plainView)}>{plainView ? 'rendered' : 'plain'}</button>
             <span class="fname">{selectedFile.path}</span>
           </div>
           <div class="head-mid">
@@ -1734,10 +1741,14 @@
             <div class="filecontent image">
               <img src={`/raw/${encodeURI(selectedFile.path)}?v=${selectedFile.v}`} alt={selectedFile.path} />
             </div>
-          {:else if selectedFile.text !== null && isMarkdown(selectedFile.path) && !mdPlain}
+          {:else if selectedFile.text !== null && isMarkdown(selectedFile.path) && !plainView}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div class="filecontent md" onclick={onMdClick}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'))}</div>
+          {:else if selectedFile.text !== null && isHtml(selectedFile.path) && !plainView}
+            <div class="filecontent html">
+              <iframe src={`/raw/${encodeURI(selectedFile.path)}?v=${selectedFile.v}`} sandbox="allow-scripts" title={selectedFile.path}></iframe>
+            </div>
           {:else if selectedFile.text !== null}
             <pre class="filecontent hljs"><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>
           {:else}

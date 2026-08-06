@@ -1400,6 +1400,20 @@ select.sessionselect {
   object-fit: contain;
 }
 
+/* Rendered HTML preview: the iframe fills the viewer pane; white
+   background because project HTML pages usually assume one. */
+.filecontent.html {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+.filecontent.html iframe {
+  flex: 1;
+  border: none;
+  background: #fff;
+}
+
 /* Unified git diff: GitHub-style full-width line backgrounds. Each
    line is a block (inline-block would not wrap under white-space: pre);
    min-width keeps backgrounds full-width when lines overflow horizontally. */
