@@ -534,7 +534,7 @@ aside {
   padding: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.75rem;
 }
 
 /* empty-state logo, centered both ways (chat is a flex column) */
@@ -589,7 +589,7 @@ aside {
    padding, so the block's left edge lines up with the message text. */
 .msgrow.assistant .thinking-block {
   margin: 0 auto 0 0.9rem;
-  max-width: 90%;
+  max-width: 85%;
 }
 
 .msgrow.thinkrow {
