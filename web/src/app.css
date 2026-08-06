@@ -162,8 +162,32 @@ main {
   flex: 1;
   display: flex;
   min-height: 0;
-  gap: 50px;
   position: relative;
+}
+
+/* Draggable divider between the chat column and the file pane: sits on
+   the right side of the 50px gap, replacing the aside's left border. */
+.vsplitter {
+  flex: 0 0 1px;
+  background: var(--border);
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.vsplitter::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  z-index: 5;
+}
+
+.vsplitter:hover,
+.vsplitter:active {
+  background: var(--muted);
 }
 
 /* Message-navigator dots, vertically centered in the 50px gap between
@@ -242,10 +266,11 @@ main {
 }
 
 .chatcol {
-  flex: 1;
+  flex: 1; /* fallback; overridden inline by the draggable splitter */
   display: flex;
   flex-direction: column;
   min-width: 0;
+  margin-right: 50px; /* the gap between chat and the file panes */
 }
 
 aside {
@@ -253,7 +278,6 @@ aside {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--border);
   min-height: 0;
 }
 
@@ -952,11 +976,11 @@ select.sessionselect {
 /* ---------- file browser ---------- */
 
 .browser {
-  height: 25%;
+  height: 25%; /* fallback; overridden inline by the draggable splitter */
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--border);
   min-height: 0;
+  flex-shrink: 0;
   /* inherits the default text font (the global button rule passes it
      through to the directory entries) */
   font-size: 1rem;
@@ -1069,6 +1093,31 @@ select.sessionselect {
 .direntry.selected .name.git-added,
 .direntry.selected .gitmark.git-added {
   filter: brightness(1.15);
+}
+
+/* Draggable divider between the directory browser and the file
+   viewer: a slim border line with an enlarged hit area for grabbing. */
+.splitter {
+  flex: 0 0 1px;
+  background: var(--border);
+  position: relative;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.splitter::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  bottom: -4px;
+  z-index: 5;
+}
+
+.splitter:hover,
+.splitter:active {
+  background: var(--muted);
 }
 
 /* ---------- file viewer ---------- */

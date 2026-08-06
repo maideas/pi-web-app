@@ -225,6 +225,44 @@
   // Footer stats
   let stats = $state(null)
 
+  // Split ratio between the directory browser (top) and the file
+  // viewer (bottom) in the right-hand pane, adjustable by dragging the
+  // divider between them; persisted across reloads.
+  let browserRatio = $state(Number(localStorage.getItem('browserRatio')) || 0.25)
+  let asideEl = $state(null)
+  // Same for the vertical divider between the chat column and the
+  // directory/file pane (sits on the right side of the gap).
+  let chatRatio = $state(Number(localStorage.getItem('chatRatio')) || 0.5)
+  let bodyEl = $state(null)
+  // Shared pointer-drag plumbing for both splitters: `apply` maps a
+  // pointer event to the new ratio, `key` persists it on release.
+  function dragSplit(ev, apply, key) {
+    ev.preventDefault()
+    const move = (e) => apply(e)
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      localStorage.setItem(key, String(key === 'chatRatio' ? chatRatio : browserRatio))
+      updateFades()
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  function startSplitDrag(ev) {
+    const rect = asideEl.getBoundingClientRect()
+    dragSplit(ev, (e) => {
+      const r = (e.clientY - rect.top) / rect.height
+      browserRatio = Math.min(0.9, Math.max(0.1, r))
+    }, 'browserRatio')
+  }
+  function startChatSplitDrag(ev) {
+    const rect = bodyEl.getBoundingClientRect()
+    dragSplit(ev, (e) => {
+      const r = (e.clientX - rect.left) / rect.width
+      chatRatio = Math.min(0.8, Math.max(0.2, r))
+    }, 'chatRatio')
+  }
+
   // Pending attachments: [{ kind: 'image', name, data (base64), mimeType, url (data URL) }
   //                       | { kind: 'text', name, text }]
   let attachments = $state([])
@@ -1290,8 +1328,10 @@
 </script>
 
 <main>
-  <div class="body">
-   <div class="chatcol">
+  <div class="body" bind:this={bodyEl}>
+   <!-- chatRatio marks the splitter position; the chat column ends
+        50px earlier, preserving the gap that hosts the dot menu -->
+   <div class="chatcol" style="flex: 0 0 calc({(chatRatio * 100).toFixed(2)}% - 51px)">
     <div class="toolbar">
       <div class="tgroup">
       <select bind:value={theme} title="Theme">
@@ -1545,7 +1585,7 @@
   </div>
    </div>
 
-   <button class="gap-dots" aria-label="Jump to one of your messages" onmouseenter={openMsgNav} onmouseleave={scheduleCloseMsgNav} onfocus={openMsgNav} onblur={scheduleCloseMsgNav} onclick={openMsgNav}>
+   <button class="gap-dots" style="left: calc({(chatRatio * 100).toFixed(2)}% - 26px)" aria-label="Jump to one of your messages" onmouseenter={openMsgNav} onmouseleave={scheduleCloseMsgNav} onfocus={openMsgNav} onblur={scheduleCloseMsgNav} onclick={openMsgNav}>
     <span></span><span></span><span></span>
    </button>
 
@@ -1559,8 +1599,9 @@
     </div>
    {/if}
 
-   <aside>
-    <div class="browser">
+   <div class="vsplitter" role="separator" aria-orientation="vertical" aria-label="Resize chat/files split" onpointerdown={startChatSplitDrag}></div>
+   <aside bind:this={asideEl}>
+    <div class="browser" style="height: {(browserRatio * 100).toFixed(2)}%">
       <div class="browser-path">
         <span>/{browserPath}</span>
       </div>
@@ -1585,6 +1626,7 @@
         </div>
       </div>
     </div>
+    <div class="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize browser/viewer split" onpointerdown={startSplitDrag}></div>
     <div class="viewer">
       {#if selectedFile}
         <div class="viewer-head">
