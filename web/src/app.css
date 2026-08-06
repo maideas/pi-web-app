@@ -1031,6 +1031,29 @@ select.sessionselect {
   color: var(--user-fg);
 }
 
+/* git status per entry: name tint + letter badge (M/A/U, VS Code style) */
+.direntry .name.git-modified,
+.direntry .gitmark.git-modified {
+  color: var(--warn-fg);
+}
+
+.direntry .name.git-added,
+.direntry .gitmark.git-added {
+  color: var(--ok);
+}
+
+.direntry .gitmark {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.direntry.selected .name.git-modified,
+.direntry.selected .gitmark.git-modified,
+.direntry.selected .name.git-added,
+.direntry.selected .gitmark.git-added {
+  filter: brightness(1.15);
+}
+
 /* ---------- file viewer ---------- */
 
 .viewer {
@@ -1048,6 +1071,39 @@ select.sessionselect {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* Overview ruler: colored change marks along the right edge of the
+   viewer (VS Code / meld style), scaled to the full file height. Sits
+   left of the scrollbar; pointer-events off so scrolling stays usable. */
+.diffruler {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 10px; /* keep the native scrollbar visible */
+  width: 6px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.diffruler .mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  min-height: 2px;
+  border-radius: 1px;
+}
+
+.diffruler .mark.add {
+  background: var(--ok);
+}
+
+.diffruler .mark.del {
+  background: var(--err);
+}
+
+.diffruler .mark.mod {
+  background: var(--warn-border);
 }
 
 /* Fade-out gradients softening the content cut-off at the viewer's
@@ -1119,8 +1175,25 @@ select.sessionselect {
   color: var(--muted);
 }
 
+/* Centered content-type status (file / diff / rendered / image / binary).
+   The fname and this share the flexible space equally, so the label sits
+   in the middle of the header. */
+.viewer-head .ftype {
+  flex: 1;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted2);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .viewer-head .dl {
   flex-shrink: 0;
+  border: none;
+  cursor: pointer;
   background: var(--accent);
   color: var(--accent-fg);
   text-decoration: none;
@@ -1134,6 +1207,21 @@ select.sessionselect {
   line-height: 1;
   display: inline-flex;
   align-items: center;
+}
+
+.viewer-head .dl.danger {
+  background: #b33;
+  color: #fff;
+}
+
+.viewer-head .dl:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.viewer-head .dl.active {
+  outline: 2px solid var(--warn-border);
+  outline-offset: -1px;
 }
 
 :root[data-theme] pre.filecontent {
@@ -1188,6 +1276,33 @@ select.sessionselect {
   width: auto;
   height: auto;
   object-fit: contain;
+}
+
+/* Unified git diff: GitHub-style full-width line backgrounds. Each
+   line is a block (inline-block would not wrap under white-space: pre);
+   min-width keeps backgrounds full-width when lines overflow horizontally. */
+.filecontent.diff .dline {
+  display: block;
+  min-width: fit-content;
+  width: 100%;
+}
+
+.filecontent.diff .dline.add {
+  background: rgba(63, 166, 89, 0.18); /* --ok tinted */
+  color: var(--fg);
+}
+
+.filecontent.diff .dline.del {
+  background: rgba(224, 82, 82, 0.16); /* --err tinted */
+  color: var(--fg);
+}
+
+.filecontent.diff .dline.hunk {
+  color: var(--link);
+}
+
+.filecontent.diff .dline.meta {
+  color: var(--muted);
 }
 
 .filecontent.placeholder,

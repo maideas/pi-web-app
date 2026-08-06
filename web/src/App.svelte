@@ -273,6 +273,80 @@
   // cleared) don't push.
   let viewerHistory = $state([])
   let viewerFuture = $state([])
+
+  // Diff view: when set, the viewer shows the git diff of the selected
+  // file instead of its content. { path, diff } (diff === '' means no
+  // changes, diff === null means error — message in `error`). Cleared
+  // whenever another file is shown.
+  let diffView = $state(null)
+
+  async function toggleDiff() {
+    if (diffView) {
+      diffView = null
+      return
+    }
+    const path = selectedFile?.path
+    if (!path) return
+    diffView = await apiGet(`/api/diff?path=${encodeURIComponent(path)}`)
+  }
+
+  // Render a unified git diff as per-line highlighted HTML (GitHub-style
+  // full-line backgrounds; hunk headers and file metadata dimmed).
+  function renderDiff(text) {
+    return text
+      .split('\n')
+      .map((line) => {
+        let cls = 'ctx'
+        if (line.startsWith('+++') || line.startsWith('---') || /^(diff |index |new file|deleted file|similarity|rename |old mode|new mode|Binary files)/.test(line)) cls = 'meta'
+        else if (line.startsWith('@@')) cls = 'hunk'
+        else if (line.startsWith('+')) cls = 'add'
+        else if (line.startsWith('-')) cls = 'del'
+        return `<span class="dline ${cls}">${escapeHtml(line)}\n</span>`
+      })
+      .join('')
+  }
+
+  // ----- overview ruler (VS Code / meld style) -----
+  // Colored marks on the right edge of the viewer, shown only while a
+  // diff is rendered: +/- runs positioned by their line index within
+  // the diff text, scaled to the full diff height.
+  function marksForDiff(diffText) {
+    const lines = diffText.split('\n')
+    const total = lines.length
+    const marks = []
+    let start = 0
+    let kind = null
+    const flush = (i) => {
+      if (kind) marks.push({ top: start / total, height: (i - start) / total, kind })
+      kind = null
+    }
+    lines.forEach((line, i) => {
+      let k = null
+      if (/^\+(?!\+\+)/.test(line)) k = 'add'
+      else if (/^-(?!--)/.test(line)) k = 'del'
+      if (k !== kind) {
+        flush(i)
+        if (k) {
+          start = i
+          kind = k
+        }
+      }
+    })
+    flush(total)
+    return marks
+  }
+
+  const rulerMarks = $derived(diffView?.diff ? marksForDiff(diffView.diff) : [])
+
+  // Label for the centered viewer-head status: what the pane shows.
+  const viewerType = $derived.by(() => {
+    if (!selectedFile) return ''
+    if (diffView) return diffView.diff ? 'diff' : diffView.error ? 'diff · error' : 'diff · no changes'
+    if (selectedFile.image) return 'image'
+    if (selectedFile.text === null) return 'binary'
+    if (isMarkdown(selectedFile.path)) return 'markdown · rendered'
+    return 'source'
+  })
   function pushViewerHistory(prevPath, newPath) {
     if (prevPath && prevPath !== newPath) {
       viewerHistory.push(prevPath)
@@ -285,6 +359,7 @@
   async function showFileAt(path) {
     const f = await loadViewerFile(path)
     if (!f.path || f.error) return false
+    diffView = null
     selectedFile = f
     rememberFile(path)
     await browse(path.split('/').slice(0, -1).join('/'))
@@ -393,14 +468,34 @@
     }
   }
 
+  // Delete the file currently shown in the viewer (after confirmation),
+  // then refresh the directory listing and clear the viewer. The deleted
+  // path is dropped from the back/forward stacks.
+  async function deleteViewerFile() {
+    const path = selectedFile?.path
+    if (!path || !confirm(`Delete ${path} from disk?`)) return
+    const resp = await apiPost('/api/file/delete', { path })
+    if (!resp.success) {
+      entries.push({ role: 'system', text: `⚠️ delete failed: ${resp.error ?? 'unknown error'}` })
+      return
+    }
+    viewerHistory = viewerHistory.filter((p) => p !== path)
+    viewerFuture = viewerFuture.filter((p) => p !== path)
+    selectedFile = null
+    diffView = null
+    await browse(browserPath)
+  }
+
   async function selectEntry(e) {
     if (e.dir) {
       selectedFile = null
+      diffView = null
       await browse(e.path)
     } else {
       const prev = selectedFile?.path
       const f = await loadViewerFile(e.path)
       if (f.path && !f.error) pushViewerHistory(prev, e.path)
+      diffView = null
       selectedFile = f
       rememberFile(e.path)
     }
@@ -423,9 +518,12 @@
       const f = await loadViewerFile(selectedFile.path)
       if (f.error) {
         selectedFile = null
+        diffView = null
         await browse('')
       } else {
         selectedFile = f
+        // Keep an open diff view current after agent runs.
+        if (diffView) diffView = await apiGet(`/api/diff?path=${encodeURIComponent(f.path)}`)
       }
     }
   }
@@ -603,6 +701,7 @@
     entries = []
     attachments = []
     selectedFile = null
+    diffView = null
     viewerHistory = []
     viewerFuture = []
     toolsUsedInRun = false
@@ -1478,7 +1577,8 @@
           {#each dirEntries as e}
             <button class="direntry" class:selected={selectedFile?.path === e.path} onclick={() => selectEntry(e)}>
               <span class="icon">{e.dir ? '📁' : '📄'}</span>
-              <span class="name">{e.name}</span>
+              <span class="name" class:git-modified={e.git === 'modified'} class:git-added={e.git === 'added' || e.git === 'untracked'}>{e.name}</span>
+              {#if e.git}<span class="gitmark" class:git-modified={e.git === 'modified'} class:git-added={e.git === 'added' || e.git === 'untracked'} title={e.git}>{e.git === 'modified' ? 'M' : e.git === 'added' ? 'A' : 'U'}</span>{/if}
               <span class="size">{fmtSize(e.size)}</span>
             </button>
           {/each}
@@ -1491,13 +1591,31 @@
           <button class="nav" title="back" disabled={viewerHistory.length === 0} onclick={() => viewerGo(-1)}>&lt;</button>
           <button class="nav" title="forward" disabled={viewerFuture.length === 0} onclick={() => viewerGo(1)}>&gt;</button>
           <span class="fname">{selectedFile.path}</span>
+          {#if viewerType}<span class="ftype">{viewerType}</span>{/if}
+          <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
+          <button class="dl" class:active={diffView} title="toggle git diff of this file" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>diff</button>
           <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
         </div>
       {/if}
       <div class="viewer-body" onscrollcapture={updateFades}>
         <div class="fade fade-top" class:visible={fadeTop}></div>
         <div class="fade fade-bottom" class:visible={fadeBottom}></div>
-        {#if selectedFile}
+        {#if rulerMarks.length}
+          <div class="diffruler">
+            {#each rulerMarks as m}
+              <div class="mark {m.kind}" style="top:{(m.top * 100).toFixed(3)}%; height:{(m.height * 100).toFixed(3)}%"></div>
+            {/each}
+          </div>
+        {/if}
+        {#if selectedFile && diffView}
+          {#if diffView.error}
+            <div class="filecontent binary">Diff failed: {diffView.error}</div>
+          {:else if !diffView.diff}
+            <div class="filecontent binary">No changes against git HEAD.</div>
+          {:else}
+            <pre class="filecontent diff"><code>{@html renderDiff(diffView.diff)}</code></pre>
+          {/if}
+        {:else if selectedFile}
           {#if selectedFile.image}
             <div class="filecontent image">
               <img src={`/raw/${encodeURI(selectedFile.path)}?v=${selectedFile.v}`} alt={selectedFile.path} />

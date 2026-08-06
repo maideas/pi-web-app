@@ -737,6 +737,92 @@ def detach_project(pid):
 MAX_PREVIEW_BYTES = 512 * 1024
 
 
+def git_status_map(root: Path) -> dict[str, str]:
+    """Map project-relative paths to a git status: modified/added/untracked.
+
+    Runs one repo-wide `git status --porcelain -z` and re-roots the paths
+    onto the project root (which may be a subdirectory of the repo).
+    Returns {} if the project is not in a git work tree. Deleted files are
+    skipped: they don't appear in directory listings anyway. An untracked
+    directory is reported by git as a single `?? dir/` entry, which marks
+    the whole subtree via the prefix aggregation in api_list.
+    """
+    try:
+        top = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        if top.returncode != 0:
+            return {}
+        repo = Path(top.stdout.strip())
+        out = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "-z"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        if out.returncode != 0:
+            return {}
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+
+    statuses: dict[str, str] = {}
+    fields = out.stdout.split("\0")
+    i = 0
+    while i < len(fields):
+        entry = fields[i]
+        i += 1
+        if len(entry) < 4:
+            continue
+        xy, rel = entry[:2], entry[3:]
+        if "R" in xy or "C" in xy:
+            i += 1  # rename/copy: skip the extra origin-path field
+        if xy == "??":
+            status = "untracked"
+        elif "D" in xy:
+            continue  # deleted: not present in listings
+        elif "A" in xy:
+            status = "added"
+        else:
+            status = "modified"
+        # Re-root repo-relative onto project-relative; skip paths outside.
+        p = (repo / rel).resolve()
+        if p == root:
+            continue
+        if root != repo and root not in p.parents:
+            continue
+        statuses[str(p.relative_to(root)) + ("/" if rel.endswith("/") else "")] = status
+    return statuses
+
+
+# Which status wins when aggregating a directory's children.
+_GIT_RANK = {"modified": 3, "added": 2, "untracked": 1}
+
+
+def git_dir_status(statuses: dict[str, str], rel: str) -> str | None:
+    """Strongest status of any path under directory `rel`, or None."""
+    prefix = rel + "/"
+    best = None
+    for path, status in statuses.items():
+        under = (
+            path.rstrip("/") == rel
+            or path.startswith(prefix)
+            or (path.endswith("/") and prefix.startswith(path))
+        )
+        if under and (best is None or _GIT_RANK[status] > _GIT_RANK[best]):
+            best = status
+    return best
+
+
+def git_file_status(statuses: dict[str, str], rel: str) -> str | None:
+    """Status of file `rel`; inherits from an untracked ancestor dir."""
+    direct = statuses.get(rel)
+    if direct:
+        return direct
+    for path, status in statuses.items():
+        if path.endswith("/") and rel.startswith(path):
+            return status
+    return None
+
+
 def safe_path(rel: str) -> Path:
     """Resolve rel under the current project root; reject escapes."""
     root = project_root()
@@ -752,17 +838,20 @@ def api_list():
     d = safe_path(request.args.get("path", ""))
     if not d.is_dir():
         http_abort(404)
+    statuses = git_status_map(root)
     entries = []
     try:
         for f in sorted(d.iterdir(), key=lambda x: (x.is_file(), x.name.lower())):
             try:
                 st = f.stat()
+                rel = str(f.relative_to(root))
                 entries.append(
                     {
                         "name": f.name,
-                        "path": str(f.relative_to(root)),
+                        "path": rel,
                         "dir": f.is_dir(),
                         "size": None if f.is_dir() else st.st_size,
+                        "git": git_dir_status(statuses, rel) if f.is_dir() else git_file_status(statuses, rel),
                     }
                 )
             except OSError:
@@ -798,6 +887,57 @@ def api_file():
     except UnicodeDecodeError:
         return jsonify({"path": str(p.relative_to(root)), "text": None, "reason": "binary file"})
     return jsonify({"path": str(p.relative_to(root)), "text": text, "reason": None})
+
+
+@app.route("/api/diff")
+def api_diff():
+    """Unified git diff for one file (worktree vs HEAD).
+
+    Untracked files are diffed against /dev/null so new content shows as
+    additions. Returns {path, diff, error}; diff == "" means no changes.
+    """
+    root = project_root()
+    p = safe_path(request.args.get("path", ""))
+    if not p.is_file():
+        http_abort(404)
+    rel = str(p.relative_to(root))
+
+    def run(*args):
+        return subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+
+    try:
+        tracked = run("ls-files", "--error-unmatch", "--", rel).returncode == 0
+        if tracked:
+            out = run("diff", "HEAD", "--", rel)
+            if out.returncode not in (0, 1):  # e.g. unborn HEAD (no commits)
+                out = run("diff", "--", rel)
+        else:
+            # --no-index exits 1 when the files differ; that's the normal case.
+            out = run("diff", "--no-index", "--", os.devnull, rel)
+        if out.returncode not in (0, 1):
+            msg = (out.stderr or "git diff failed").strip()
+            return jsonify({"path": rel, "diff": None, "error": msg})
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return jsonify({"path": rel, "diff": None, "error": str(e)})
+    diff = out.stdout
+    if len(diff) > MAX_PREVIEW_BYTES:
+        diff = diff[:MAX_PREVIEW_BYTES] + "\n…(truncated)\n"
+    return jsonify({"path": rel, "diff": diff, "error": None})
+
+
+@app.route("/api/file/delete", methods=["POST"])
+def api_file_delete():
+    p = safe_path((request.get_json(silent=True) or {}).get("path", ""))
+    if not p.is_file():
+        http_abort(404)
+    try:
+        p.unlink()
+    except OSError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    return jsonify({"success": True})
 
 
 @app.route("/raw/<path:rel>")
