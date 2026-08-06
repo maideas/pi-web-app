@@ -1577,9 +1577,9 @@
           {#each dirEntries as e}
             <button class="direntry" class:selected={selectedFile?.path === e.path} onclick={() => selectEntry(e)}>
               <span class="icon">{e.dir ? '📁' : '📄'}</span>
-              <span class="name" class:git-modified={e.git === 'modified'} class:git-added={e.git === 'added' || e.git === 'untracked'}>{e.name}</span>
-              {#if e.git}<span class="gitmark" class:git-modified={e.git === 'modified'} class:git-added={e.git === 'added' || e.git === 'untracked'} title={e.git}>{e.git === 'modified' ? 'M' : e.git === 'added' ? 'A' : 'U'}</span>{/if}
+              <span class="name" class:git-modified={e.git === 'modified'} class:git-added={e.git === 'added' || e.git === 'untracked'} class:git-ignored={e.git === 'ignored'}>{e.name}</span>
               <span class="size">{fmtSize(e.size)}</span>
+              <span class="gitmark" class:git-modified={e.git === 'modified'} class:git-added={e.git === 'added' || e.git === 'untracked'} class:git-ignored={e.git === 'ignored'} class:git-clean={e.git === 'clean'} title={e.git ?? ''}>{e.git === 'modified' ? 'M' : e.git === 'added' ? 'A' : e.git === 'untracked' ? 'U' : e.git === 'ignored' ? 'I' : e.git === 'clean' ? '✓' : ''}</span>
             </button>
           {/each}
         </div>
@@ -1588,13 +1588,19 @@
     <div class="viewer">
       {#if selectedFile}
         <div class="viewer-head">
-          <button class="nav" title="back" disabled={viewerHistory.length === 0} onclick={() => viewerGo(-1)}>&lt;</button>
-          <button class="nav" title="forward" disabled={viewerFuture.length === 0} onclick={() => viewerGo(1)}>&gt;</button>
-          <span class="fname">{selectedFile.path}</span>
-          {#if viewerType}<span class="ftype">{viewerType}</span>{/if}
-          <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
-          <button class="dl" class:active={diffView} title="toggle git diff of this file" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>diff</button>
-          <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
+          <div class="head-left">
+            <button class="nav" title="back" disabled={viewerHistory.length === 0} onclick={() => viewerGo(-1)}>&lt;</button>
+            <button class="nav" title="forward" disabled={viewerFuture.length === 0} onclick={() => viewerGo(1)}>&gt;</button>
+            <span class="fname">{selectedFile.path}</span>
+          </div>
+          <div class="head-mid">
+            {#if viewerType}<span class="ftype">{viewerType}</span>{/if}
+          </div>
+          <div class="head-right">
+            <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
+            <button class="dl" class:active={diffView} title="toggle git diff of this file" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>diff</button>
+            <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
+          </div>
         </div>
       {/if}
       <div class="viewer-body" onscrollcapture={updateFades}>

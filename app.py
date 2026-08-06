@@ -737,15 +737,20 @@ def detach_project(pid):
 MAX_PREVIEW_BYTES = 512 * 1024
 
 
-def git_status_map(root: Path) -> dict[str, str]:
-    """Map project-relative paths to a git status: modified/added/untracked.
+def git_status_map(root: Path) -> dict[str, str] | None:
+    """Map project-relative paths to a git status:
+    modified/added/untracked/ignored.
+
+    Returns None (instead of {}) when the project is not inside a git
+    work tree, so callers can distinguish "clean repo" from "no repo".
 
     Runs one repo-wide `git status --porcelain -z` and re-roots the paths
     onto the project root (which may be a subdirectory of the repo).
-    Returns {} if the project is not in a git work tree. Deleted files are
+    Deleted files are
     skipped: they don't appear in directory listings anyway. An untracked
     directory is reported by git as a single `?? dir/` entry, which marks
-    the whole subtree via the prefix aggregation in api_list.
+    the whole subtree via the prefix aggregation in api_list; the same
+    holds for ignored directories (`!! dir/` via --ignored).
     """
     try:
         top = subprocess.run(
@@ -753,16 +758,16 @@ def git_status_map(root: Path) -> dict[str, str]:
             capture_output=True, text=True, timeout=5, check=False,
         )
         if top.returncode != 0:
-            return {}
+            return None
         repo = Path(top.stdout.strip())
         out = subprocess.run(
-            ["git", "-C", str(root), "status", "--porcelain", "-z"],
+            ["git", "-C", str(root), "status", "--porcelain", "--ignored", "-z"],
             capture_output=True, text=True, timeout=10, check=False,
         )
         if out.returncode != 0:
-            return {}
+            return None
     except (OSError, subprocess.TimeoutExpired):
-        return {}
+        return None
 
     statuses: dict[str, str] = {}
     fields = out.stdout.split("\0")
@@ -777,6 +782,8 @@ def git_status_map(root: Path) -> dict[str, str]:
             i += 1  # rename/copy: skip the extra origin-path field
         if xy == "??":
             status = "untracked"
+        elif xy == "!!":
+            status = "ignored"
         elif "D" in xy:
             continue  # deleted: not present in listings
         elif "A" in xy:
@@ -793,8 +800,10 @@ def git_status_map(root: Path) -> dict[str, str]:
     return statuses
 
 
-# Which status wins when aggregating a directory's children.
-_GIT_RANK = {"modified": 3, "added": 2, "untracked": 1}
+# Which status wins when aggregating a directory's children. "ignored"
+# ranks lowest: a directory only shows as ignored if nothing under it
+# has a stronger status.
+_GIT_RANK = {"modified": 3, "added": 2, "untracked": 1, "ignored": 0}
 
 
 def git_dir_status(statuses: dict[str, str], rel: str) -> str | None:
@@ -813,7 +822,7 @@ def git_dir_status(statuses: dict[str, str], rel: str) -> str | None:
 
 
 def git_file_status(statuses: dict[str, str], rel: str) -> str | None:
-    """Status of file `rel`; inherits from an untracked ancestor dir."""
+    """Status of file `rel`; inherits from an untracked/ignored ancestor dir."""
     direct = statuses.get(rel)
     if direct:
         return direct
@@ -839,19 +848,25 @@ def api_list():
     if not d.is_dir():
         http_abort(404)
     statuses = git_status_map(root)
+    in_repo = statuses is not None
+    if statuses is None:
+        statuses = {}
     entries = []
     try:
         for f in sorted(d.iterdir(), key=lambda x: (x.is_file(), x.name.lower())):
             try:
                 st = f.stat()
                 rel = str(f.relative_to(root))
+                git = git_dir_status(statuses, rel) if f.is_dir() else git_file_status(statuses, rel)
+                if git is None and in_repo:
+                    git = "clean"  # tracked, no local changes
                 entries.append(
                     {
                         "name": f.name,
                         "path": rel,
                         "dir": f.is_dir(),
                         "size": None if f.is_dir() else st.st_size,
-                        "git": git_dir_status(statuses, rel) if f.is_dir() else git_file_status(statuses, rel),
+                        "git": git,
                     }
                 )
             except OSError:

@@ -1042,7 +1042,24 @@ select.sessionselect {
   color: var(--ok);
 }
 
+/* gitignored entries: dimmed, like VS Code */
+.direntry .name.git-ignored,
+.direntry .gitmark.git-ignored {
+  color: var(--muted2);
+}
+
+/* tracked and unchanged: subtle ok checkmark */
+.direntry .gitmark.git-clean {
+  color: var(--ok);
+  opacity: 0.6;
+  font-weight: 400;
+}
+
+/* fixed-width status column so the letters/checkmarks line up */
 .direntry .gitmark {
+  flex-shrink: 0;
+  width: 1.1rem;
+  text-align: center;
   font-size: 0.85rem;
   font-weight: 600;
 }
@@ -1136,12 +1153,32 @@ select.sessionselect {
 
 .viewer-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.6rem; /* same vertical padding as the chat toolbar */
   border-bottom: 1px solid var(--border-soft);
   font-size: 1rem;
+}
+
+/* Three equal sections: nav + path (left), content type (center),
+   action buttons (right). flex-basis 0 makes the thirds truly equal
+   regardless of content width; min-width lets the fname ellipsize. */
+.viewer-head .head-left,
+.viewer-head .head-mid,
+.viewer-head .head-right {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.viewer-head .head-mid {
+  justify-content: center;
+}
+
+.viewer-head .head-right {
+  justify-content: flex-end;
 }
 
 .viewer-head .nav {
@@ -1168,19 +1205,14 @@ select.sessionselect {
 }
 
 .viewer-head .fname {
-  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
 }
 
-/* Centered content-type status (file / diff / rendered / image / binary).
-   The fname and this share the flexible space equally, so the label sits
-   in the middle of the header. */
+/* Centered content-type status (file / diff / rendered / image / binary). */
 .viewer-head .ftype {
-  flex: 1;
-  text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
