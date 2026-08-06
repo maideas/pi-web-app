@@ -1633,7 +1633,7 @@
           </div>
           <div class="head-right">
             <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
-            <button class="dl" class:active={diffView} title="toggle git diff of this file" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>diff</button>
+            <button class="dl" class:active={diffView} title="toggle git diff of this file" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>git diff</button>
             <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
           </div>
         </div>
