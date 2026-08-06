@@ -1,6 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte'
   import { marked } from 'marked'
+  import GithubSlugger from 'github-slugger'
   import DOMPurify from 'dompurify'
   import hljs from 'highlight.js'
   import hljsDark from 'highlight.js/styles/github-dark.css?inline'
@@ -41,6 +42,18 @@
       '"': '&quot;',
       "'": '&#39;',
     }[m]))
+  }
+
+  // Heading ids for in-page anchors are GitHub-compatible slugs; the
+  // instance is shared and reset per parse (see renderMarkdown).
+  const slugger = new GithubSlugger()
+
+  // Heading text reaches the renderer as HTML, so entities (&amp;, &#39;)
+  // must be decoded before slugging or '&' headings get the wrong id.
+  function decodeEntities(html) {
+    const el = document.createElement('textarea')
+    el.innerHTML = html
+    return el.value
   }
 
   // GitHub-style alert blockquotes (> [!NOTE] / [!TIP] / [!IMPORTANT] /
@@ -110,6 +123,15 @@
         const path = normalizePath(mdImageBase ? `${mdImageBase}/${href}` : href)
         const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
         return `<img src="/raw/${encodeURI(path)}" alt="${escapeHtml(token.text || '')}"${title}>`
+      },
+      heading(token) {
+        // marked emits plain <hN> without ids, so in-page anchors
+        // (#table-of-contents links) would have no target. Add
+        // GitHub-compatible slug ids; the slugger is reset per parse in
+        // renderMarkdown so numbering of duplicates stays stable.
+        const html = this.parser.parseInline(token.tokens)
+        const id = slugger.slug(decodeEntities(html.replace(/<[^>]*>/g, '')))
+        return `<h${token.depth} id="${escapeHtml(id)}">${html}</h${token.depth}>\n`
       },
       link(token) {
         // Drop links with unsafe schemes (javascript:, data:, ...) at
@@ -463,7 +485,10 @@
   // would otherwise resolve against the app page URL (e.g. /app.py) and
   // navigate the SPA away to an invalid endpoint; instead load them in
   // the viewer, resolved against the markdown file's own directory.
-  // External links open in a new tab; in-page anchors scroll natively.
+  // External links open in a new tab; in-page anchors (#heading-slug) are
+  // scrolled explicitly inside their own scroll container — the app URL
+  // has no matching document fragment, so the browser default would just
+  // dirty the location bar without moving the viewer/chat pane.
   function normalizePath(p) {
     const parts = []
     for (const seg of p.split('/')) {
@@ -474,10 +499,17 @@
     return parts.join('/')
   }
 
-  async function openLinkedFile(path) {
+  // `frag`: optional #fragment of the link — after the file is rendered,
+  // scroll the viewer to that heading (links like [x](other.md#section)).
+  async function openLinkedFile(path, frag = '') {
     const prev = selectedFile?.path
     if (await showFileAt(path)) {
       pushViewerHistory(prev, path)
+      if (frag) {
+        await tick()
+        const pane = document.querySelector('.viewer-body .filecontent')
+        if (pane) scrollToAnchor(pane, frag)
+      }
       return
     }
     // Not a file — maybe a directory link: navigate the browser there.
@@ -506,7 +538,12 @@
     const a = e.target.closest('a')
     if (!a) return
     const href = a.getAttribute('href') ?? ''
-    if (!href || href.startsWith('#')) return // in-page anchor: native scroll
+    if (!href) return
+    if (href.startsWith('#')) {
+      e.preventDefault()
+      scrollToAnchor(a, href.slice(1))
+      return
+    }
     if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
       if (href.includes(':') && !/^(https?|mailto):/i.test(href)) {
         e.preventDefault()
@@ -517,9 +554,41 @@
       return
     }
     e.preventDefault()
-    const [pathPart] = href.split('#')
+    const [pathPart, frag] = href.split('#')
     if (!pathPart) return
-    openLinkedFile(normalizePath(base ? `${base}/${pathPart}` : pathPart))
+    openLinkedFile(normalizePath(base ? `${base}/${pathPart}` : pathPart), frag)
+  }
+
+  // Scroll to the element carrying `id` within the pane the link lives in
+  // (.filecontent for the viewer, .chat for chat messages), so the rest
+  // of the layout stays put. Ids come from the heading renderer's slugs;
+  // hrefs may be percent-encoded (e.g. emoji headings), hence decodeURI.
+  function scrollToAnchor(fromEl, rawId) {
+    const pane = fromEl.closest('.filecontent, .chat')
+    if (!pane || !rawId) return false
+    let id = rawId
+    try {
+      id = decodeURIComponent(rawId)
+    } catch {
+      // malformed escape sequence: use the raw fragment as-is
+    }
+    const esc = (v) => (window.CSS?.escape ? CSS.escape(v) : v.replace(/[^\w-]/g, '\\$&'))
+    let target =
+      pane.querySelector(`#${esc(id)}`) ??
+      pane.querySelector(`#${esc(rawId)}`) ??
+      pane.querySelector(`[name="${esc(id)}"]`)
+    if (!target) {
+      // Tolerant fallback: hand-written or tool-generated TOCs often
+      // disagree with the slug on non-alphanumerics (emoji, variation
+      // selectors, punctuation), e.g. '#\u{fe0f}-low-x' vs id 'ℹ\u{fe0f}-low-x'.
+      // Compare on [a-z0-9-] only before giving up.
+      const norm = (v) => v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+      const want = norm(id)
+      target = [...pane.querySelectorAll('[id]')].find((el) => norm(el.id) === want)
+    }
+    if (!target) return false
+    pane.scrollTop += target.getBoundingClientRect().top - pane.getBoundingClientRect().top - 8
+    return true
   }
 
   // Remember the open viewer file per project (registry: lastFile);
@@ -603,6 +672,7 @@
   let mdImageBase = ''
   function renderMarkdown(text, base = '') {
     mdImageBase = base
+    slugger.reset()
     try {
       return marked.parse(text ?? '', { async: false })
     } finally {
