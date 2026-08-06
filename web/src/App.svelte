@@ -163,6 +163,8 @@
   let currentProjectId = $state('')
   let showNewProject = $state(false)
   let showManage = $state(false) // manage-projects popup (detach)
+  let showManageSessions = $state(false) // manage-sessions popup (delete from disk)
+  let msChecked = $state({}) // session path -> checked for deletion
 
   // New-project directory picker (popup). Shows only directories and is
   // confined to the parent directory of the current project (users of a
@@ -184,10 +186,11 @@
     dialogTimer = setTimeout(() => {
       showNewProject = false
       showManage = false
+      showManageSessions = false
     }, DIALOG_IDLE_MS)
   }
   $effect(() => {
-    if (showNewProject || showManage) pokeDialogTimer()
+    if (showNewProject || showManage || showManageSessions) pokeDialogTimer()
     else clearTimeout(dialogTimer)
   })
 
@@ -811,6 +814,40 @@
     showManage = !showManage
   }
 
+  function toggleManageSessions() {
+    showManageSessions = !showManageSessions
+    if (showManageSessions) {
+      msChecked = {}
+      refreshSessions()
+    }
+  }
+
+  const msSelectedPaths = () => sessions.filter((s) => msChecked[s.path] && !s.current).map((s) => s.path)
+
+  // All selectable (non-current) sessions checked? Drives the all/none toggle.
+  const msAllChecked = () => {
+    const selectable = sessions.filter((s) => !s.current)
+    return selectable.length > 0 && selectable.every((s) => msChecked[s.path])
+  }
+
+  function msToggleAll() {
+    msChecked = msAllChecked()
+      ? {}
+      : Object.fromEntries(sessions.filter((s) => !s.current).map((s) => [s.path, true]))
+  }
+
+  async function deleteCheckedSessions() {
+    const paths = msSelectedPaths()
+    if (!paths.length) return
+    if (!window.confirm(`Delete ${paths.length} session${paths.length > 1 ? 's' : ''} from disk?\n\nThis cannot be undone.`)) return
+    const resp = await apiPost('/delete_sessions', { paths })
+    if (resp.errors?.length) {
+      entries.push({ role: 'system', text: `⚠️ ${resp.errors.map((e) => `${e.path}: ${e.error}`).join('\n')}` })
+    }
+    msChecked = {}
+    await refreshSessions()
+  }
+
   // Detach = remove from the registry only; the directory stays on disk.
   async function detachProject(p) {
     if (p.current) return
@@ -1375,6 +1412,7 @@
         {/each}
       </select>
       <button onclick={newSession}>new</button>
+      <button onclick={toggleManageSessions} title="Manage sessions">manage</button>
       </div>
     </div>
   {#if showNewProject}
@@ -1444,6 +1482,37 @@
           {:else}
             <div class="np-empty">No projects registered.</div>
           {/each}
+        </div>
+      </div>
+    </div>
+  {/if}
+  {#if showManageSessions}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="np-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (showManageSessions = false)}>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="np-modal" role="dialog" aria-modal="true" aria-label="Manage sessions" tabindex="-1" oninput={pokeDialogTimer} onfocusin={pokeDialogTimer} onclick={pokeDialogTimer}>
+        <div class="np-head">
+          <span class="np-title">Manage sessions</span>
+          <button class="np-close" onclick={() => (showManageSessions = false)}>×</button>
+        </div>
+        <div class="ms-toolbar">
+          <button class="ms-all" onclick={msToggleAll}>{msAllChecked() ? 'select none' : 'select all'}</button>
+        </div>
+        <div class="np-list">
+          {#each sessions as s (s.path)}
+            <label class="mp-row ms-row" class:ms-current={s.current}>
+              <input type="checkbox" bind:checked={msChecked[s.path]} disabled={s.current} title={s.current ? 'The current session cannot be deleted' : ''} />
+              <span class="mp-name">{s.name}{s.current ? ' (current)' : ''}</span>
+              <span class="ms-date">{new Date(s.mtime * 1000).toLocaleString()}</span>
+            </label>
+          {:else}
+            <div class="np-empty">No sessions found.</div>
+          {/each}
+        </div>
+        <div class="np-actions">
+          <span class="ms-count">{msSelectedPaths().length} selected</span>
+          <button onclick={deleteCheckedSessions} disabled={!msSelectedPaths().length} title="Delete the checked sessions from disk">delete</button>
         </div>
       </div>
     </div>
@@ -1550,7 +1619,7 @@
     <textarea
       bind:this={inputEl}
       bind:value={input}
-      onfocus={() => { showNewProject = false; showManage = false }}
+      onfocus={() => { showNewProject = false; showManage = false; showManageSessions = false }}
       onkeydown={onKeydown}
       placeholder={streaming ? 'Agent is working — type to steer, Enter to send…' : 'Prompt pi… (Enter to send, Shift+Enter for newline)'}
       rows="2"

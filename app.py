@@ -412,6 +412,47 @@ def sessions():
     return jsonify({"sessions": out})
 
 
+@app.route("/delete_sessions", methods=["POST"])
+def delete_sessions():
+    """Delete session files from disk (never the currently active one).
+
+    Paths are validated against the current session directory so the
+    endpoint can't be abused to delete arbitrary files.
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not isinstance(body.get("paths"), list):
+        return jsonify({"success": False, "error": "missing paths"}), 400
+    state_resp = pi().rpc_request({"type": "get_state"})
+    sf = state_resp.get("data", {}).get("sessionFile") if state_resp.get("success") else None
+    if not sf:
+        return jsonify({"success": False, "error": "no active session"}), 500
+    session_dir = Path(sf).parent.resolve()
+    deleted, errors = [], []
+    for p in body["paths"]:
+        if not isinstance(p, str):
+            continue
+        f = Path(p)
+        try:
+            resolved = f.resolve()
+        except OSError:
+            errors.append({"path": p, "error": "invalid path"})
+            continue
+        if resolved.parent != session_dir or resolved.suffix != ".jsonl":
+            errors.append({"path": p, "error": "not a session file"})
+            continue
+        if str(resolved) == sf:
+            errors.append({"path": p, "error": "cannot delete the current session"})
+            continue
+        try:
+            resolved.unlink()
+            deleted.append(p)
+        except FileNotFoundError:
+            deleted.append(p)  # already gone — fine
+        except OSError as e:
+            errors.append({"path": p, "error": str(e)})
+    return jsonify({"success": not errors, "deleted": deleted, "errors": errors})
+
+
 @app.route("/switch_session", methods=["POST"])
 def switch_session():
     body = request.get_json(silent=True)

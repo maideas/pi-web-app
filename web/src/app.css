@@ -342,6 +342,19 @@ aside {
   font-weight: 600;
 }
 
+.ms-toolbar {
+  padding: 0.4rem 0.8rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.ms-all {
+  height: 1.6rem;
+  padding: 0 0.6rem;
+  font-size: 0.8rem;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
 .np-close {
   background: none;
   color: var(--muted);
@@ -406,6 +419,34 @@ aside {
   height: 2rem;
   box-sizing: border-box;
   line-height: 1;
+}
+
+/* Manage-sessions popup rows */
+.ms-row {
+  cursor: pointer;
+}
+
+.ms-row.ms-current {
+  cursor: default;
+  color: var(--muted);
+}
+
+.ms-row .mp-name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ms-date {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.ms-count {
+  flex: 1;
+  color: var(--muted);
 }
 
 .np-actions {
