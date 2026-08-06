@@ -414,10 +414,12 @@ def sessions():
 
 @app.route("/delete_sessions", methods=["POST"])
 def delete_sessions():
-    """Delete session files from disk (never the currently active one).
+    """Delete session files from disk (including the currently active one).
 
     Paths are validated against the current session directory so the
-    endpoint can't be abused to delete arbitrary files.
+    endpoint can't be abused to delete arbitrary files. Deleting the
+    active session's file is allowed — the frontend switches to another
+    session (or a new one) right away.
     """
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or not isinstance(body.get("paths"), list):
@@ -439,9 +441,6 @@ def delete_sessions():
             continue
         if resolved.parent != session_dir or resolved.suffix != ".jsonl":
             errors.append({"path": p, "error": "not a session file"})
-            continue
-        if str(resolved) == sf:
-            errors.append({"path": p, "error": "cannot delete the current session"})
             continue
         try:
             resolved.unlink()

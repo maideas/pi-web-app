@@ -832,30 +832,45 @@
     }
   }
 
-  const msSelectedPaths = () => sessions.filter((s) => msChecked[s.path] && !s.current).map((s) => s.path)
+  const msSelectedPaths = () => sessions.filter((s) => msChecked[s.path]).map((s) => s.path)
 
-  // All selectable (non-current) sessions checked? Drives the all/none toggle.
+  // All sessions checked? Drives the all/none toggle.
   const msAllChecked = () => {
-    const selectable = sessions.filter((s) => !s.current)
-    return selectable.length > 0 && selectable.every((s) => msChecked[s.path])
+    return sessions.length > 0 && sessions.every((s) => msChecked[s.path])
   }
 
   function msToggleAll() {
     msChecked = msAllChecked()
       ? {}
-      : Object.fromEntries(sessions.filter((s) => !s.current).map((s) => [s.path, true]))
+      : Object.fromEntries(sessions.map((s) => [s.path, true]))
   }
 
   async function deleteCheckedSessions() {
     const paths = msSelectedPaths()
     if (!paths.length) return
-    if (!window.confirm(`Delete ${paths.length} session${paths.length > 1 ? 's' : ''} from disk?\n\nThis cannot be undone.`)) return
+    const current = sessions.find((s) => s.current)
+    const includesCurrent = !!current && paths.includes(current.path)
+    const warning = includesCurrent
+      ? '\n\nThis includes the current session — you will be switched to the latest remaining session (or a new one).'
+      : ''
+    if (!window.confirm(`Delete ${paths.length} session${paths.length > 1 ? 's' : ''} from disk?${warning}\n\nThis cannot be undone.`)) return
     const resp = await apiPost('/delete_sessions', { paths })
     if (resp.errors?.length) {
       entries.push({ role: 'system', text: `⚠️ ${resp.errors.map((e) => `${e.path}: ${e.error}`).join('\n')}` })
     }
     msChecked = {}
+    showManageSessions = false
     await refreshSessions()
+    // If the current session was deleted, move to the latest remaining
+    // session (list is newest-first); if none is left, start a new one.
+    if (includesCurrent && resp.deleted?.includes(current.path)) {
+      const next = sessions[0]
+      if (next) {
+        await switchToSession(next.path)
+      } else {
+        await newSession()
+      }
+    }
   }
 
   // Detach = remove from the registry only; the directory stays on disk.
@@ -889,9 +904,7 @@
     await switchProject(resp.project.id)
   }
 
-  async function onSessionChange(e) {
-    const path = e.target.value
-    if (!path || path === currentSessionPath) return
+  async function switchToSession(path) {
     const resp = await apiPost('/switch_session', { path })
     if (resp.success && !resp.data?.cancelled) {
       currentSessionPath = path
@@ -902,6 +915,12 @@
       inputEl?.focus()
     }
     await refreshSessions()
+  }
+
+  async function onSessionChange(e) {
+    const path = e.target.value
+    if (!path || path === currentSessionPath) return
+    await switchToSession(path)
   }
 
   function handleEvent(ev) {
@@ -1512,7 +1531,7 @@
         <div class="np-list">
           {#each sessions as s (s.path)}
             <label class="mp-row ms-row" class:ms-current={s.current}>
-              <input type="checkbox" bind:checked={msChecked[s.path]} disabled={s.current} title={s.current ? 'The current session cannot be deleted' : ''} />
+              <input type="checkbox" bind:checked={msChecked[s.path]} />
               <span class="mp-name">{s.name}{s.current ? ' (current)' : ''}</span>
               <span class="ms-date">{new Date(s.mtime * 1000).toLocaleString()}</span>
             </label>
