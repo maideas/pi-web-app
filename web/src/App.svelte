@@ -1585,7 +1585,7 @@
    {#if showMsgNav}
     <div class="msgnav-popup" role="dialog" aria-label="Your messages" tabindex="-1" onmouseenter={openMsgNav} onmouseleave={closeMsgNav}>
       {#each userMessages as { e, i } (i)}
-        <button class="msgnav-item" onclick={() => jumpToMessage(i)} title={e.text}>{truncate(e.text)}</button>
+        <button class="msgnav-item" onclick={() => jumpToMessage(i)}>{truncate(e.text)}</button>
       {:else}
         <div class="msgnav-empty">No messages yet.</div>
       {/each}
