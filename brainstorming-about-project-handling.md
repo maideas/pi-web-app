@@ -4,7 +4,8 @@ Status: **first increment implemented** (see §7): project registry
 (`projects.json` in the app dir, gitignored), `GET/POST /api/projects`,
 `POST /api/projects/<id>/open`, a project switcher + new-project dialog
 in the toolbar, and the file browser rooted at the current project.
-Detach and per-project last-file restore landed afterwards.
+Detach, per-project last-file restore, and workspace containment
+(`PI_WEB_WORKSPACE`) landed afterwards.
 Decisions for the §6 open questions are recorded there.
 Context: the app (see [README.md](README.md)) is currently a chat UI
 around a single `pi --mode rpc` process bound to one directory. It
@@ -118,7 +119,9 @@ per-tab becomes interesting.
 
 1. Where do projects live? → **Arbitrary paths anywhere.** No fixed
    workspace root; registering an existing directory in place (§5) is
-   too useful to give up.
+   too useful to give up. (Since superseded: a workspace root was added
+   later — `PI_WEB_WORKSPACE`, default the parent of the app dir — and
+   all project registration and opening is confined to it.)
 2. Parallel or serial? → **Serial (model A).** All pi I/O goes through
    a `PiProcess` wrapper class in [app.py](app.py), so a process pool
    (model B) can slot in later without reworking the endpoints.
@@ -138,8 +141,8 @@ per-tab becomes interesting.
 Implemented as suggested: registry JSON + `GET/POST /api/projects` +
 a project-switcher dropdown that respawns pi with the new cwd and
 loads that project's sessions. The new-project popup is a directory
-picker (`GET /api/dirs`, directories only, confined to the parent of
-the current project — web users usually don't know absolute paths)
+picker (`GET /api/dirs`, directories only, confined to the workspace
+root — web users usually don't know absolute paths)
 covering §3 flavors 1 (create a folder, optional `git init`) and 2
 (select an existing directory); the git-clone flavor, uploads,
 templates, process pool, and per-tab projects are deferred.

@@ -59,7 +59,8 @@
   const ALERT_LABELS = { note: 'Note', tip: 'Tip', important: 'Important', warning: 'Warning', caution: 'Caution' }
   const ALERT_MARKER = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][^\S\n]*\n?/
 
-  // Syntax-highlight fenced code blocks in chat markdown
+  // Custom marked renderers: alert blockquotes, highlighted code blocks,
+  // sanitized raw HTML, and safe image/link handling
   marked.use({
     renderer: {
       blockquote(token) {
@@ -167,8 +168,8 @@
   let msChecked = $state({}) // session path -> checked for deletion
 
   // New-project directory picker (popup). Shows only directories and is
-  // confined to the parent directory of the current project (users of a
-  // web app usually don't know absolute paths, so they browse instead).
+  // confined to the workspace root (users of a web app usually don't
+  // know absolute paths, so they browse instead).
   let npBase = $state('')
   let npPath = $state('')
   let npParent = $state(null)
@@ -176,7 +177,7 @@
   let npFolder = $state('')
   let npGit = $state(false)
 
-  // Auto-close the project dialogs when unused: closes after
+  // Auto-close the project/session dialogs when unused: closes after
   // DIALOG_IDLE_MS without interaction (any input/focus inside the
   // dialog resets the timer) or when the chat input gains focus.
   const DIALOG_IDLE_MS = 20_000

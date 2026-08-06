@@ -22,7 +22,7 @@ Features:
   and can be deleted from a manage popup
 - Slash commands with autocomplete, mapped to their RPC equivalents
 - Project file browser with markdown, HTML, and image preview, git
-  status badges, a per-file git diff view, and download
+  status badges, a per-file git diff view, download, and delete
 - Light, cream, and dark themes
 
 **Limitation (by design):** single-user. One pi subprocess and one shared
