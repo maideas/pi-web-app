@@ -1455,26 +1455,19 @@
     {#if entries.length === 0}
       <div class="chat-empty" aria-hidden="true">
         <svg class="logo" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-          <!-- circuit traces -->
-          <g stroke="currentColor" stroke-width="1.5" fill="none" opacity="0.5">
-            <path d="M60 18 V34" />
-            <path d="M22 44 L36 52" />
-            <path d="M98 44 L84 52" />
-            <path d="M34 96 L44 84" />
-            <path d="M86 96 L76 84" />
+          <!-- outline variant of the app icon (web/public/logo.svg) -->
+          <g stroke="currentColor" fill="none" stroke-linecap="round">
+            <path
+              stroke-width="6"
+              stroke-linejoin="round"
+              d="M36 13h48a23 23 0 0 1 23 23v30a23 23 0 0 1-23 23H61l-19.1 16.7c-2 1.7-5 .3-5-2.3V89.7A23 23 0 0 1 13 66V36a23 23 0 0 1 23-23z"
+            />
+            <g stroke-width="9">
+              <path d="M40 34h40" />
+              <path d="M51 34v32" />
+              <path d="M69 34v24a8 8 0 0 0 8 8" />
+            </g>
           </g>
-          <g fill="currentColor" opacity="0.5">
-            <circle cx="60" cy="14" r="4" />
-            <circle cx="18" cy="42" r="4" />
-            <circle cx="102" cy="42" r="4" />
-            <circle cx="31" cy="101" r="4" />
-            <circle cx="89" cy="101" r="4" />
-          </g>
-          <!-- pi glyph -->
-          <path
-            d="M34 44 h52 v8 h-10 v22 c0 6 3 8 8 8 v8 c-10 0 -16 -5 -16 -14 v-24 h-8 v26 c0 6 -2 10 -8 12 l-4 -7 c3 -1 4 -3 4 -7 v-24 h-8 z"
-            fill="currentColor"
-          />
         </svg>
         <div class="chat-empty-text">pi agent web UI</div>
       </div>
