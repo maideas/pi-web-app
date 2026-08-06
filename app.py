@@ -16,6 +16,7 @@ and its latest session resumed.
 """
 
 import json
+import logging
 import os
 import queue
 import subprocess
@@ -35,6 +36,15 @@ APP_ROOT = Path(__file__).resolve().parent
 REGISTRY_PATH = APP_ROOT / "projects.json"
 
 app = Flask(__name__, static_folder=DIST_DIR, static_url_path="")
+# Reject requests whose Host header is not a local name: a remote page
+# could otherwise use DNS rebinding to become same-origin with this app
+# and drive the agent (the CSRF header check doesn't help against that).
+app.config["TRUSTED_HOSTS"] = ["127.0.0.1", "localhost", "::1"]
+# Cap request bodies (image attachments are base64 in JSON): without a
+# limit, a single request could buffer arbitrary amounts of memory.
+app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
+
+log = logging.getLogger("pi_web")
 
 # ---------------------------------------------------------------------------
 # pi subprocess management
@@ -110,9 +120,26 @@ class PiProcess:
 
     def broadcast(self, event: dict) -> None:
         with self.subscribers_lock:
+            overflowed = []
             for q in self.subscribers:
                 try:
                     q.put_nowait(event)
+                except queue.Full:
+                    overflowed.append(q)
+            # A full queue means the client stopped consuming; dropping
+            # arbitrary mid-stream events would silently desync it (e.g.
+            # a lost agent_end leaves the UI "streaming" forever). Kick
+            # the subscriber instead: it gets a stream_overflow sentinel
+            # (making room for it first), reconnects, and reloads state.
+            for q in overflowed:
+                self.subscribers.remove(q)
+                log.warning("SSE subscriber overflowed; disconnecting it")
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    q.put_nowait({"type": "stream_overflow"})
                 except queue.Full:
                     pass
 
@@ -126,7 +153,11 @@ class PiProcess:
                 self.proc.kill()
                 self.proc.wait(timeout=1.0)  # reap; avoid a zombie
             except (OSError, subprocess.TimeoutExpired):
-                pass
+                log.warning("pi process did not die on kill; possible orphan")
+        try:
+            self.proc.stdin.close()
+        except OSError:
+            pass
 
     def _reader(self) -> None:
         """Read JSONL events from pi stdout. Split on \\n only (strict JSONL)."""
@@ -141,6 +172,7 @@ class PiProcess:
                     try:
                         event = json.loads(line)
                     except json.JSONDecodeError:
+                        log.warning("dropping non-JSON line from pi stdout: %.120s", line)
                         continue
 
                     # Route correlated command responses to waiting rpc_request calls.
@@ -153,9 +185,14 @@ class PiProcess:
 
                     # Broadcast everything else to all SSE subscribers.
                     self.broadcast(event)
-            except Exception as exc:
-                print("reader thread error:", exc)
+            except Exception:
+                log.exception("reader thread error")
             time.sleep(0.2)
+        # Process is gone: release the pipe fd (GC would get it eventually).
+        try:
+            self.proc.stdout.close()
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +209,10 @@ def load_projects() -> list[dict]:
 
 def save_projects(projects: list[dict]) -> None:
     tmp = REGISTRY_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(projects, indent=2) + "\n")
+    with tmp.open("w") as fh:
+        fh.write(json.dumps(projects, indent=2) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())  # survive a crash right after the rename
     tmp.replace(REGISTRY_PATH)
 
 
@@ -291,10 +331,12 @@ def events():
 @app.route("/prompt", methods=["POST"])
 def prompt():
     body = request.get_json(silent=True)
-    if not isinstance(body, dict) or "message" not in body:
+    if not isinstance(body, dict) or not isinstance(body.get("message"), str):
         return jsonify({"success": False, "error": "missing message"}), 400
     cmd = {"type": "prompt", "message": body["message"]}
     if body.get("streamingBehavior"):
+        if body["streamingBehavior"] not in ("steer", "followUp"):
+            return jsonify({"success": False, "error": "invalid streamingBehavior"}), 400
         cmd["streamingBehavior"] = body["streamingBehavior"]
     # Optional attached images: [{"data": base64, "mimeType": "image/png"}]
     images = body.get("images")
@@ -368,6 +410,33 @@ def set_thinking():
     return jsonify(pi().rpc_request({"type": "set_thinking_level", "level": body["level"]}))
 
 
+# Session display names live in the latest "session_info" entry of the
+# JSONL (appended by pi on set_session_name), so resolving one means
+# scanning the whole file. Cache by (mtime, size) — /sessions is called
+# after every agent run and sessions can be many MB.
+_session_name_cache: dict[str, tuple[float, int, str | None]] = {}
+
+
+def _session_name(f: Path, mtime: float, size: int) -> str | None:
+    key = str(f)
+    cached = _session_name_cache.get(key)
+    if cached is not None and cached[0] == mtime and cached[1] == size:
+        return cached[2]
+    name = None
+    try:
+        with f.open() as fh:
+            for line in fh:
+                if '"type":"session_info"' in line:
+                    try:
+                        name = json.loads(line).get("name")
+                    except json.JSONDecodeError:
+                        log.debug("unparseable session_info line in %s", f)
+    except OSError:
+        log.debug("cannot read session file %s", f)
+    _session_name_cache[key] = (mtime, size, name)
+    return name
+
+
 @app.route("/sessions")
 def sessions():
     state_resp = pi().rpc_request({"type": "get_state"})
@@ -384,23 +453,12 @@ def sessions():
         return jsonify({"sessions": []})
     out = []
     for f in files:
-        # Session display name lives in the latest "session_info" entry
-        # (appended by pi on set_session_name), not in the header line.
-        name = None
         try:
-            with f.open() as fh:
-                for line in fh:
-                    if '"type":"session_info"' in line:
-                        try:
-                            name = json.loads(line).get("name")
-                        except Exception:
-                            pass
-        except Exception:
-            pass
-        try:
-            mtime = f.stat().st_mtime
+            st = f.stat()
+            mtime, size = st.st_mtime, st.st_size
         except OSError:
-            mtime = 0
+            mtime, size = 0, -1
+        name = _session_name(f, mtime, size)
         out.append(
             {
                 "path": str(f),
@@ -444,6 +502,7 @@ def delete_sessions():
             continue
         try:
             resolved.unlink()
+            _session_name_cache.pop(str(resolved), None)
             deleted.append(p)
         except FileNotFoundError:
             deleted.append(p)  # already gone — fine
@@ -455,7 +514,7 @@ def delete_sessions():
 @app.route("/switch_session", methods=["POST"])
 def switch_session():
     body = request.get_json(silent=True)
-    if not isinstance(body, dict) or "path" not in body:
+    if not isinstance(body, dict) or not isinstance(body.get("path"), str):
         return jsonify({"success": False, "error": "missing path"}), 400
     return jsonify(pi().rpc_request({"type": "switch_session", "sessionPath": body["path"]}))
 
@@ -471,21 +530,26 @@ def compact():
     body = request.get_json(silent=True)
     cmd = {"type": "compact"}
     if isinstance(body, dict) and body.get("customInstructions"):
+        if not isinstance(body["customInstructions"], str):
+            return jsonify({"success": False, "error": "invalid customInstructions"}), 400
         cmd["customInstructions"] = body["customInstructions"]
-    return jsonify(pi().rpc_request(cmd))
+    # Compaction runs a model call over the whole context — far slower
+    # than the default RPC timeout.
+    return jsonify(pi().rpc_request(cmd, timeout=300))
 
 
 @app.route("/set_session_name", methods=["POST"])
 def set_session_name():
     body = request.get_json(silent=True)
-    if not isinstance(body, dict) or "name" not in body:
+    if not isinstance(body, dict) or not isinstance(body.get("name"), str):
         return jsonify({"success": False, "error": "missing name"}), 400
     return jsonify(pi().rpc_request({"type": "set_session_name", "name": body["name"]}))
 
 
 @app.route("/export_html", methods=["POST"])
 def export_html():
-    return jsonify(pi().rpc_request({"type": "export_html"}))
+    # Rendering a large session to HTML can exceed the default timeout.
+    return jsonify(pi().rpc_request({"type": "export_html"}, timeout=300))
 
 
 @app.route("/ui-response", methods=["POST"])
@@ -1030,8 +1094,17 @@ def download(rel):
 
 @app.route("/")
 def index():
-    return send_from_directory(DIST_DIR, "index.html")
+    resp = send_from_directory(DIST_DIR, "index.html")
+    # Defense-in-depth against sanitizer regressions: the app renders
+    # agent- and file-controlled markdown. 'unsafe-inline' styles are
+    # needed for Svelte style attributes and the injected hljs themes.
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'self'; img-src 'self' data: http: https:; "
+        "style-src 'self' 'unsafe-inline'; frame-src 'self'; object-src 'none'"
+    )
+    return resp
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5000")), threaded=True)

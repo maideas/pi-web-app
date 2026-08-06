@@ -1075,6 +1075,15 @@
         handleUiRequest(ev).catch((err) => console.error('UI request error', err))
         break
 
+      case 'stream_overflow':
+        // The server kicked this subscriber because it stopped keeping
+        // up — events were about to be lost. Reconnect and reload all
+        // state instead of continuing from a silently gappy stream.
+        console.warn('SSE stream overflowed; reconnecting')
+        reconnectEvents()
+        reinit()
+        break
+
       case 'project_switched':
         // Another tab (or client) switched the active project: our SSE
         // stream is attached to the now-dead pi process, so reconnect
@@ -1252,16 +1261,16 @@
     autoNaming = true
     try {
       const r = await apiPost('/api/auto_name', force ? { force: true } : {})
-    if (r.success && r.name) {
-      entries.push({
-        role: 'system',
-        text: r.previous ? `🏷 session renamed to “${r.name}”` : `🏷 session named “${r.name}”`,
-      })
-      scrollToBottom()
-      await refreshSessions()
-    } else if (force) {
-      entries.push({ role: 'system', text: `⚠️ rename failed: ${r.error ?? 'unknown error'}` })
-    }
+      if (r.success && r.name) {
+        entries.push({
+          role: 'system',
+          text: r.previous ? `🏷 session renamed to “${r.name}”` : `🏷 session named “${r.name}”`,
+        })
+        scrollToBottom()
+        await refreshSessions()
+      } else if (force) {
+        entries.push({ role: 'system', text: `⚠️ rename failed: ${r.error ?? 'unknown error'}` })
+      }
     } finally {
       autoNaming = false
     }

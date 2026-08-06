@@ -19,12 +19,21 @@ Features:
 - Model and thinking-level selectors, live token/cost/context stats
 - Multiple projects and sessions: switch projects, restore the last
   session and open file; sessions are auto-named from chat content
+  and can be deleted from a manage popup
 - Slash commands with autocomplete, mapped to their RPC equivalents
-- Project file browser with markdown and image preview and download
+- Project file browser with markdown, HTML, and image preview, git
+  status badges, a per-file git diff view, and download
 - Light, cream, and dark themes
 
 **Limitation (by design):** single-user. One pi subprocess and one shared
 event stream serve all connected browser tabs.
+
+**Security model:** the server binds to `127.0.0.1` and has no
+authentication — it assumes a trusted single-user host. Anyone who can
+reach the port (including other local users on a shared machine) can
+drive the agent with full tool access. Do not port-forward or reverse-proxy
+it without adding authentication. Host-header validation (`TRUSTED_HOSTS`)
+protects against DNS-rebinding attacks from remote web pages.
 
 ## Architecture
 
@@ -54,7 +63,7 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/src/app.css`](web/src/app.css) | All styles; light/cream/dark themes via CSS custom properties |
 | [`web/src/main.js`](web/src/main.js) | Svelte entry point (mounts `App`) |
 | [`web/index.html`](web/index.html) | Vite HTML entry |
-| [`web/vite.config.js`](web/vite.config.js) | Vite config; dev-server proxy for all backend endpoints |
+| [`web/vite.config.js`](web/vite.config.js) | Vite config; dev-server proxy for the backend endpoints |
 | [`web/jsconfig.json`](web/jsconfig.json) | JS type-checking config (checkJs) for the frontend |
 | [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, dompurify, highlight.js) |
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
@@ -102,6 +111,7 @@ Sessions and slash commands:
 | `/commands` | GET | Slash commands invocable via prompt (pi `get_commands`) |
 | `/compact` | POST | Compact context; optional `customInstructions` |
 | `/set_session_name` | POST | Set session display name |
+| `/delete_sessions` | POST | Delete session files from disk (paths confined to the session dir; deleting the active session is allowed) |
 | `/api/auto_name` | POST | Name the session from its content via a one-shot pi call (no-op if already named or too little content; `force: true` regenerates) |
 | `/export_html` | POST | Export session to an HTML file |
 | `/ui-response` | POST | Relay extension UI dialog responses to pi |
@@ -123,11 +133,13 @@ File browser and static hosting:
 |---|---|---|
 | `/api/list?path=` | GET | List a directory under the project root |
 | `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB) |
-| `/raw/<path>` | GET | Serve a file inline (image preview; nosniff + CSP sandbox) |
+| `/api/diff?path=` | GET | Unified git diff for one file (worktree vs HEAD; untracked vs /dev/null) |
+| `/api/file/delete` | POST | Delete a file under the project root |
+| `/raw/<path>` | GET | Serve a file inline (image/HTML preview; nosniff + CSP sandbox) |
 | `/download/<path>` | GET | Download a file |
 | `/` | GET | Serve the built SPA from `web/dist/` |
 
-Paths for `/api/list`, `/api/file`, `/raw/*`, and `/download/*` are confined to
+Paths for `/api/list`, `/api/file`, `/api/diff`, `/api/file/delete`, `/raw/*`, and `/download/*` are confined to
 the current project's root (traversal attempts get 403). POST endpoints require an
 `X-Requested-With: XMLHttpRequest` header (CSRF protection, 403 otherwise),
 validate their JSON bodies and
