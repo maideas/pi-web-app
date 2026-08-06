@@ -385,9 +385,12 @@
     if (diffView) return diffView.diff ? 'diff' : diffView.error ? 'diff · error' : 'diff · no changes'
     if (selectedFile.image) return 'image'
     if (selectedFile.text === null) return 'binary'
-    if (isMarkdown(selectedFile.path)) return 'markdown · rendered'
+    if (isMarkdown(selectedFile.path)) return mdPlain ? 'markdown · plain' : 'markdown · rendered'
     return 'source'
   })
+
+  // Toggle between rendered and plain (source) markdown in the viewer.
+  let mdPlain = $state(false)
   function pushViewerHistory(prevPath, newPath) {
     if (prevPath && prevPath !== newPath) {
       viewerHistory.push(prevPath)
@@ -1695,6 +1698,7 @@
           <div class="head-left">
             <button class="nav" title="back" disabled={viewerHistory.length === 0} onclick={() => viewerGo(-1)}>&lt;</button>
             <button class="nav" title="forward" disabled={viewerFuture.length === 0} onclick={() => viewerGo(1)}>&gt;</button>
+            <button class="dl" title={mdPlain ? 'show rendered markdown' : 'show plain markdown'} disabled={!isMarkdown(selectedFile.path) || selectedFile.image || selectedFile.text === null} onclick={() => (mdPlain = !mdPlain)}>{mdPlain ? 'rendered' : 'plain'}</button>
             <span class="fname">{selectedFile.path}</span>
           </div>
           <div class="head-mid">
@@ -1730,7 +1734,7 @@
             <div class="filecontent image">
               <img src={`/raw/${encodeURI(selectedFile.path)}?v=${selectedFile.v}`} alt={selectedFile.path} />
             </div>
-          {:else if selectedFile.text !== null && isMarkdown(selectedFile.path)}
+          {:else if selectedFile.text !== null && isMarkdown(selectedFile.path) && !mdPlain}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div class="filecontent md" onclick={onMdClick}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'))}</div>
