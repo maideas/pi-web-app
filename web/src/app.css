@@ -585,10 +585,10 @@ aside {
 
 /* Thinking block rendered as its own row above the assistant bubble,
    so its copy button aligns with it and the message copy button aligns
-   with the message bubble below. Left margin mimics the old in-bubble
-   inset (the .msg padding it used to sit inside). */
+   with the message bubble below. Left margin matches the .msg bubble
+   padding, so the block's left edge lines up with the message text. */
 .msgrow.assistant .thinking-block {
-  margin: 0 auto 0 1.2rem;
+  margin: 0 auto 0 0.9rem;
   max-width: 90%;
 }
 
@@ -893,6 +893,7 @@ aside {
 
 .msg.tool {
   align-self: stretch;
+  margin-right: 1.2rem; /* keep clear of the copy-button column */
   background: var(--panel-alt);
   border: 1px solid var(--border);
   font-size: 0.85rem;
