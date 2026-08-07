@@ -287,13 +287,27 @@ def resume_latest_session(p: PiProcess) -> None:
 
 
 def remember_session(path: str | None) -> None:
-    """Persist (or clear) the selected session for the current project."""
+    """Persist (or clear) the selected session for the current project.
+
+    Loads the registry fresh: the module-level list and even
+    current["project"] can be detached from what's on disk (project
+    endpoints load/save their own copies), so saving the in-memory
+    list would drop the change and clobber newer fields.
+    """
     project = current["project"]
     if path:
         project["lastSession"] = path
     else:
         project.pop("lastSession", None)
-    save_projects(projects)
+    registry = load_projects()
+    for entry in registry:
+        if entry["id"] == project["id"]:
+            if path:
+                entry["lastSession"] = path
+            else:
+                entry.pop("lastSession", None)
+            break
+    save_projects(registry)
 
 
 def most_recent_project(projects: list[dict]) -> dict:
