@@ -1742,20 +1742,6 @@
         <option value="dark">dark</option>
       </select>
       </div>
-      <div class="tgroup">
-      <select value={currentModel ? `${currentModel.provider}::${currentModel.id}` : ''} onchange={onModelChange}>
-        {#each models as m}
-          <option value={`${m.provider}::${m.id}`} selected={currentModel && m.provider === currentModel.provider && m.id === currentModel.id}>
-            {m.name ?? m.id}
-          </option>
-        {/each}
-      </select>
-      <select value={thinkingLevel} onchange={onThinkingChange}>
-        {#each thinkingLevels as l}
-          <option value={l} selected={l === thinkingLevel}>{l}</option>
-        {/each}
-      </select>
-      </div>
     </div>
   {#if showNewProject}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -1881,9 +1867,6 @@
         </details>
       {/if}
     {/each}
-    {#if streaming && !currentAssistant()}
-      <div class="msg assistant thinking">thinking…</div>
-    {/if}
   </div>
   </div>
 
@@ -1936,6 +1919,21 @@
       <button onclick={sendPrompt} disabled={!input.trim() && attachments.length === 0}>send</button>
     {/if}
   </footer>
+
+  <div class="model-bar">
+    <select value={currentModel ? `${currentModel.provider}::${currentModel.id}` : ''} onchange={onModelChange}>
+      {#each models as m}
+        <option value={`${m.provider}::${m.id}`} selected={currentModel && m.provider === currentModel.provider && m.id === currentModel.id}>
+          {m.name ?? m.id}
+        </option>
+      {/each}
+    </select>
+    <select value={thinkingLevel} onchange={onThinkingChange}>
+      {#each thinkingLevels as l}
+        <option value={l} selected={l === thinkingLevel}>{l}</option>
+      {/each}
+    </select>
+  </div>
 
   <div class="statusbar">
     {#if stats}
