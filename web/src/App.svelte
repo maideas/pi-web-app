@@ -374,6 +374,10 @@
   let dirFadeBottom = $state(false)
   let chatFadeTop = $state(false)
   let chatFadeBottom = $state(false)
+  let projFadeTop = $state(false)
+  let projFadeBottom = $state(false)
+  let sessFadeTop = $state(false)
+  let sessFadeBottom = $state(false)
   function fadesFor(selector) {
     const el = document.querySelector(selector)
     if (!el) return { top: false, bottom: false }
@@ -386,6 +390,8 @@
     ;({ top: fadeTop, bottom: fadeBottom } = fadesFor('.viewer-body .filecontent'))
     ;({ top: dirFadeTop, bottom: dirFadeBottom } = fadesFor('.browser-body .dirlist'))
     ;({ top: chatFadeTop, bottom: chatFadeBottom } = fadesFor('.chat-body .chat'))
+    ;({ top: projFadeTop, bottom: projFadeBottom } = fadesFor('.sb-projects .sb-list'))
+    ;({ top: sessFadeTop, bottom: sessFadeBottom } = fadesFor('.sb-sessions .sb-list'))
   }
 
   // Recompute once new content has rendered.
@@ -393,6 +399,8 @@
     selectedFile // track
     dirEntries // track
     entries.length // track (chat grows while streaming)
+    projects // track
+    sessions // track
     tick().then(updateFades)
   })
 
@@ -1716,6 +1724,9 @@
         <span class="sb-title">Projects</span>
         <button class="sb-new" onclick={toggleNewProject} title="New project">add</button>
       </div>
+      <div class="sb-scroll" onscrollcapture={updateFades}>
+      <div class="fade fade-top" class:visible={projFadeTop}></div>
+      <div class="fade fade-bottom" class:visible={projFadeBottom}></div>
       <div class="sb-list">
         {#each projects as p (p.id)}
           <div class="sb-item" class:current={p.current} class:outside={p.outsideWorkspace}>
@@ -1744,12 +1755,16 @@
         {/each}
       </div>
       </div>
+      </div>
       <!-- Sessions section: takes the remaining height -->
       <div class="sb-section sb-sessions">
       <div class="sidebar-head">
         <span class="sb-title">Sessions</span>
         <button class="sb-new" onclick={newSession} title="New session">new</button>
       </div>
+      <div class="sb-scroll" onscrollcapture={updateFades}>
+      <div class="fade fade-top" class:visible={sessFadeTop}></div>
+      <div class="fade fade-bottom" class:visible={sessFadeBottom}></div>
       <div class="sb-list">
         {#each sessions as s (s.path)}
           <div class="sb-item" class:current={s.current}>
@@ -1773,6 +1788,7 @@
         {/each}
       </div>
       </div>
+      </div>
     </aside>
     <div class="vsplitter sb-splitter" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" onpointerdown={startSidebarDrag} transition:slide={{ duration: 200, axis: 'x' }}></div>
    {/if}
@@ -1781,7 +1797,20 @@
         50px earlier, preserving the gap that hosts the dot menu -->
    <div class="chatcol" style="flex: 0 0 calc({(chatRatio * 100).toFixed(2)}% - 51px)">
     <div class="toolbar">
-      <div class="tgroup"></div>
+      <div class="tgroup">
+      <select class="model-select" value={currentModel ? `${currentModel.provider}::${currentModel.id}` : ''} onchange={onModelChange}>
+        {#each models as m}
+          <option value={`${m.provider}::${m.id}`} selected={currentModel && m.provider === currentModel.provider && m.id === currentModel.id}>
+            {m.name ?? m.id}
+          </option>
+        {/each}
+      </select>
+      <select value={thinkingLevel} onchange={onThinkingChange}>
+        {#each thinkingLevels as l}
+          <option value={l} selected={l === thinkingLevel}>{l}</option>
+        {/each}
+      </select>
+      </div>
     </div>
   {#if showNewProject}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -1959,21 +1988,6 @@
       <button onclick={sendPrompt} disabled={!input.trim() && attachments.length === 0}>send</button>
     {/if}
   </footer>
-
-  <div class="model-bar">
-    <select value={currentModel ? `${currentModel.provider}::${currentModel.id}` : ''} onchange={onModelChange}>
-      {#each models as m}
-        <option value={`${m.provider}::${m.id}`} selected={currentModel && m.provider === currentModel.provider && m.id === currentModel.id}>
-          {m.name ?? m.id}
-        </option>
-      {/each}
-    </select>
-    <select value={thinkingLevel} onchange={onThinkingChange}>
-      {#each thinkingLevels as l}
-        <option value={l} selected={l === thinkingLevel}>{l}</option>
-      {/each}
-    </select>
-  </div>
 
   <div class="statusbar">
     {#if stats}
