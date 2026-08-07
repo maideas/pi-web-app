@@ -191,7 +191,10 @@ main {
 }
 
 .sidebar {
-  flex: 0 0 12.5vw; /* fallback; overridden inline by the draggable splitter */
+  /* Sized via width (inline, from the draggable splitter) rather than
+     flex-basis so the slide (axis: x) transition can animate it */
+  flex: 0 0 auto;
+  width: 12.5vw; /* fallback; overridden inline */
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -567,41 +570,11 @@ aside {
   min-width: 0;
 }
 
-/* Settings popup (shares the .np-modal shell) */
-.settings-modal {
-  max-height: none;
-}
-
-.settings-body {
-  padding: 0.8rem;
-}
-
-.settings-row {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-}
-
-.settings-label {
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-.theme-options {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.theme-opt {
-  height: 2rem;
-  box-sizing: border-box;
-  line-height: 1;
-  padding: 0.4rem 0.8rem;
-}
-
-.theme-opt.active {
-  outline: 2px solid var(--accent, currentColor);
-  outline-offset: -2px;
+/* Settings: a down-expanding sidebar section below the top row,
+   styled like the projects/sessions lists */
+.sb-section.sb-settings {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border);
 }
 
 /* New-project directory picker (modal popup) */

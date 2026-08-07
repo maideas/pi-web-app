@@ -1,5 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte'
+  import { slide } from 'svelte/transition'
   import { marked } from 'marked'
   import GithubSlugger from 'github-slugger'
   import DOMPurify from 'dompurify'
@@ -1666,26 +1667,49 @@
   <div class="body">
    {#if sidebarCollapsed}
     <!-- Collapsed rail: expand toggle at the top, settings right below it -->
-    <div class="sidebar-rail">
+    <div class="sidebar-rail" transition:slide={{ duration: 200, axis: 'x' }}>
       <button class="sb-toggle" onclick={toggleSidebar} title="Show projects and sessions" aria-label="Show projects and sessions" aria-expanded="false">
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25H5.5v-11Zm5.25 0v11h7.25a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25Z"/></svg>
       </button>
-      <button class="sb-toggle" onclick={() => (showSettings = true)} title="Settings" aria-label="Settings">
+      <button class="sb-toggle" onclick={() => { toggleSidebar(); showSettings = true }} title="Settings" aria-label="Settings">
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.299.071l1.103-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294.016.257.016.515 0 .772-.01.147.038.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.977 7.977 0 0 1-.704 1.217c-.428.61-1.176.807-1.82.63l-1.102-.302c-.067-.019-.177-.011-.3.071a5.909 5.909 0 0 1-.668.386c-.133.066-.194.158-.211.224l-.29 1.106c-.168.646-.715 1.196-1.458 1.26a8.006 8.006 0 0 1-1.402 0c-.743-.064-1.289-.614-1.458-1.26l-.289-1.106c-.018-.066-.079-.158-.212-.224a5.738 5.738 0 0 1-.668-.386c-.123-.082-.233-.09-.299-.071l-1.103.303c-.644.176-1.392-.021-1.82-.63a8.12 8.12 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.05-.048.098-.147.088-.294a6.214 6.214 0 0 1 0-.772c.01-.147-.038-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.92 7.92 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.102.302c.067.019.177.011.3-.071.214-.143.437-.272.668-.386.133-.066.194-.158.212-.224l.289-1.106C6.009.645 6.556.095 7.299.03 7.53.01 7.764 0 8 0Zm-.571 1.525c-.036.003-.108.036-.137.146l-.289 1.105c-.147.561-.549.967-.998 1.189-.173.086-.34.183-.5.29-.417.278-.97.423-1.529.27l-1.103-.303c-.109-.03-.175.016-.195.045-.22.312-.412.644-.573.99-.014.031-.021.11.059.19l.815.806c.411.406.562.957.53 1.456a4.709 4.709 0 0 0 0 .582c.032.499-.119 1.05-.53 1.456l-.815.806c-.081.08-.073.159-.059.19.162.346.353.677.573.989.02.03.085.076.195.046l1.102-.303c.56-.153 1.113-.008 1.53.27.161.107.328.204.501.29.447.222.85.629.997 1.189l.289 1.105c.029.109.101.143.137.146a6.6 6.6 0 0 0 1.142 0c.036-.003.108-.036.137-.146l.289-1.105c.147-.561.549-.967.998-1.189.173-.086.34-.183.5-.29.417-.278.97-.423 1.529-.27l1.103.303c.109.029.175-.016.195-.045.22-.313.411-.644.573-.99.014-.031.021-.11-.059-.19l-.815-.806c-.411-.406-.562-.957-.53-1.456a4.709 4.709 0 0 0 0-.582c-.032-.499.119-1.05.53-1.456l.815-.806c.081-.08.073-.159.059-.19a6.464 6.464 0 0 0-.573-.989c-.02-.03-.085-.076-.195-.046l-1.102.303c-.56.153-1.113.008-1.53-.27a4.44 4.44 0 0 0-.501-.29c-.447-.222-.85-.629-.997-1.189l-.289-1.105c-.029-.11-.101-.143-.137-.146a6.6 6.6 0 0 0-1.142 0ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM9.5 8a1.5 1.5 0 1 0-3.001.001A1.5 1.5 0 0 0 9.5 8Z"/></svg>
       </button>
     </div>
    {:else}
-    <aside class="sidebar" style="flex-basis: {sidebarWidth}px">
+    <aside class="sidebar" style="width: {sidebarWidth}px" transition:slide={{ duration: 200, axis: 'x' }}>
       <!-- Top row above the Projects header: settings button left of the
            collapse toggle, both right-aligned -->
       <div class="sidebar-top">
-        <button class="sb-toggle" onclick={() => (showSettings = true)} title="Settings" aria-label="Settings">
+        <button class="sb-toggle" onclick={() => (showSettings = !showSettings)} title="Settings" aria-label="Settings" aria-expanded={showSettings}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.299.071l1.103-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294.016.257.016.515 0 .772-.01.147.038.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.977 7.977 0 0 1-.704 1.217c-.428.61-1.176.807-1.82.63l-1.102-.302c-.067-.019-.177-.011-.3.071a5.909 5.909 0 0 1-.668.386c-.133.066-.194.158-.211.224l-.29 1.106c-.168.646-.715 1.196-1.458 1.26a8.006 8.006 0 0 1-1.402 0c-.743-.064-1.289-.614-1.458-1.26l-.289-1.106c-.018-.066-.079-.158-.212-.224a5.738 5.738 0 0 1-.668-.386c-.123-.082-.233-.09-.299-.071l-1.103.303c-.644.176-1.392-.021-1.82-.63a8.12 8.12 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.05-.048.098-.147.088-.294a6.214 6.214 0 0 1 0-.772c.01-.147-.038-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.92 7.92 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.102.302c.067.019.177.011.3-.071.214-.143.437-.272.668-.386.133-.066.194-.158.212-.224l.289-1.106C6.009.645 6.556.095 7.299.03 7.53.01 7.764 0 8 0Zm-.571 1.525c-.036.003-.108.036-.137.146l-.289 1.105c-.147.561-.549.967-.998 1.189-.173.086-.34.183-.5.29-.417.278-.97.423-1.529.27l-1.103-.303c-.109-.03-.175.016-.195.045-.22.312-.412.644-.573.99-.014.031-.021.11.059.19l.815.806c.411.406.562.957.53 1.456a4.709 4.709 0 0 0 0 .582c.032.499-.119 1.05-.53 1.456l-.815.806c-.081.08-.073.159-.059.19.162.346.353.677.573.989.02.03.085.076.195.046l1.102-.303c.56-.153 1.113-.008 1.53.27.161.107.328.204.501.29.447.222.85.629.997 1.189l.289 1.105c.029.109.101.143.137.146a6.6 6.6 0 0 0 1.142 0c.036-.003.108-.036.137-.146l.289-1.105c.147-.561.549-.967.998-1.189.173-.086.34-.183.5-.29.417-.278.97-.423 1.529-.27l1.103.303c.109.029.175-.016.195-.045.22-.313.411-.644.573-.99.014-.031.021-.11-.059-.19l-.815-.806c-.411-.406-.562-.957-.53-1.456a4.709 4.709 0 0 0 0-.582c-.032-.499.119-1.05.53-1.456l.815-.806c.081-.08.073-.159.059-.19a6.464 6.464 0 0 0-.573-.989c-.02-.03-.085-.076-.195-.046l-1.102.303c-.56.153-1.113.008-1.53-.27a4.44 4.44 0 0 0-.501-.29c-.447-.222-.85-.629-.997-1.189l-.289-1.105c-.029-.11-.101-.143-.137-.146a6.6 6.6 0 0 0-1.142 0ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM9.5 8a1.5 1.5 0 1 0-3.001.001A1.5 1.5 0 0 0 9.5 8Z"/></svg>
         </button>
         <button class="sb-toggle" onclick={toggleSidebar} title="Hide projects and sessions" aria-label="Hide projects and sessions" aria-expanded="true">
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25H5.5v-11Zm5.25 0v11h7.25a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25Z"/></svg>
         </button>
       </div>
+      {#if showSettings}
+        <!-- Settings: expands below the top row, styled like the
+             projects/sessions lists; picking a theme closes it -->
+        <div class="sb-section sb-settings" in:slide={{ duration: 200 }} out:slide={{ duration: 350 }}>
+          <div class="sidebar-head">
+            <span class="sb-title">UI theme</span>
+          </div>
+          <div class="sb-list" role="radiogroup" aria-label="UI theme">
+            {#each ['light', 'cream', 'dark'] as t}
+              <div class="sb-item" class:current={theme === t}>
+                <button
+                  class="sb-session"
+                  role="radio"
+                  aria-checked={theme === t}
+                  onclick={() => { theme = t; showSettings = false }}
+                >
+                  <span class="sb-name">{t}</span>
+                </button>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
       <!-- Projects section: capped at 1/3 of the window height -->
       <div class="sb-section sb-projects">
       <div class="sidebar-head">
@@ -1750,7 +1774,7 @@
       </div>
       </div>
     </aside>
-    <div class="vsplitter sb-splitter" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" onpointerdown={startSidebarDrag}></div>
+    <div class="vsplitter sb-splitter" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" onpointerdown={startSidebarDrag} transition:slide={{ duration: 200, axis: 'x' }}></div>
    {/if}
    <div class="workspace" bind:this={bodyEl}>
    <!-- chatRatio marks the splitter position; the chat column ends
@@ -1759,34 +1783,6 @@
     <div class="toolbar">
       <div class="tgroup"></div>
     </div>
-  {#if showSettings}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="np-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (showSettings = false)}>
-      <div class="np-modal settings-modal" role="dialog" aria-modal="true" aria-label="Settings" tabindex="-1">
-        <div class="np-head">
-          <span class="np-title">Settings</span>
-          <button class="np-close" onclick={() => (showSettings = false)}>×</button>
-        </div>
-        <div class="settings-body">
-          <div class="settings-row">
-            <span class="settings-label">UI theme</span>
-            <div class="theme-options" role="radiogroup" aria-label="UI theme">
-              {#each ['light', 'cream', 'dark'] as t}
-                <button
-                  class="theme-opt"
-                  class:active={theme === t}
-                  role="radio"
-                  aria-checked={theme === t}
-                  onclick={() => (theme = t)}
-                >{t}</button>
-              {/each}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  {/if}
   {#if showNewProject}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
