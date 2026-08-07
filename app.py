@@ -254,12 +254,14 @@ def project_outside_workspace(entry: dict) -> bool:
 
 
 def resume_latest_session(p: PiProcess) -> None:
-    """Point a freshly spawned pi at the project's most recent session.
+    """Point a freshly spawned pi at the project's selected session.
 
-    pi starts a fresh session per launch; the session dir (derived from
-    the fresh session's own path) holds all sessions for that cwd, so
-    the latest one by mtime — excluding the just-created file — is the
-    one to resume.
+    Prefers the session the user last picked (persisted in the project
+    registry as "lastSession"). Falls back to the most recent session
+    by mtime: pi starts a fresh session per launch; the session dir
+    (derived from the fresh session's own path) holds all sessions for
+    that cwd, so the latest one by mtime — excluding the just-created
+    file — is the one to resume.
     """
     resp = p.rpc_request({"type": "get_state"})
     if not resp.get("success"):
@@ -268,6 +270,13 @@ def resume_latest_session(p: PiProcess) -> None:
     d = Path(sf).parent if sf else None
     if d is None or not d.is_dir():
         return
+    remembered = current["project"].get("lastSession")
+    if remembered:
+        f = Path(remembered)
+        # Only honor it if it still lives in this project's session dir.
+        if f.is_file() and f.parent == d and str(f) != sf:
+            p.rpc_request({"type": "switch_session", "sessionPath": str(f)})
+            return
     try:
         files = sorted(d.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
     except OSError:
@@ -275,6 +284,16 @@ def resume_latest_session(p: PiProcess) -> None:
     latest = next((f for f in files if str(f) != sf), None)
     if latest is not None:
         p.rpc_request({"type": "switch_session", "sessionPath": str(latest)})
+
+
+def remember_session(path: str | None) -> None:
+    """Persist (or clear) the selected session for the current project."""
+    project = current["project"]
+    if path:
+        project["lastSession"] = path
+    else:
+        project.pop("lastSession", None)
+    save_projects(projects)
 
 
 def most_recent_project(projects: list[dict]) -> dict:
@@ -407,7 +426,11 @@ def abort():
 
 @app.route("/new_session", methods=["POST"])
 def new_session():
-    return jsonify(pi().rpc_request({"type": "new_session"}))
+    resp = pi().rpc_request({"type": "new_session"})
+    if resp.get("success"):
+        # A fresh session is active; the mtime fallback picks it up.
+        remember_session(None)
+    return jsonify(resp)
 
 
 @app.route("/messages")
@@ -562,7 +585,10 @@ def switch_session():
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or not isinstance(body.get("path"), str):
         return jsonify({"success": False, "error": "missing path"}), 400
-    return jsonify(pi().rpc_request({"type": "switch_session", "sessionPath": body["path"]}))
+    resp = pi().rpc_request({"type": "switch_session", "sessionPath": body["path"]})
+    if resp.get("success"):
+        remember_session(body["path"])
+    return jsonify(resp)
 
 
 @app.route("/commands")
