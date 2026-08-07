@@ -199,6 +199,24 @@ main {
   margin-right: 14px;
 }
 
+/* Sidebar sections: projects on top (capped at 1/3 of the window
+   height, scrolling inside), sessions below with the remaining space */
+.sb-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sb-section.sb-projects {
+  flex: 0 1 auto;
+  max-height: 33.33vh;
+  border-bottom: 1px solid var(--border);
+}
+
+.sb-section.sb-sessions {
+  flex: 1;
+}
+
 .sidebar-head {
   display: flex;
   align-items: center;
@@ -207,6 +225,13 @@ main {
   min-height: 3.4rem;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+/* The sessions header has no toggle icon; indent the title to align
+   with the list entries. */
+.sb-sessions .sidebar-head {
+  padding-left: 0.6rem;
 }
 
 .sb-title {
@@ -264,6 +289,17 @@ main {
 .sb-item.current {
   background: var(--user-bg);
   color: var(--user-fg);
+}
+
+/* Projects outside the workspace: dimmed and struck through, not
+   clickable (selectProject refuses them) */
+.sb-item.outside .sb-name {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.sb-item.outside .sb-session {
+  cursor: default;
 }
 
 .sb-session {
@@ -363,6 +399,12 @@ main {
 
 .sb-menu-item.danger {
   color: var(--err);
+}
+
+.sb-menu-item:disabled {
+  color: var(--muted);
+  cursor: default;
+  background: none;
 }
 
 .sb-empty {
@@ -577,48 +619,6 @@ aside {
   padding: 1rem;
   color: var(--muted);
   font-size: 0.9rem;
-}
-
-/* Manage-projects popup rows */
-.mp-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.45rem 0.8rem;
-  font-size: 0.9rem;
-}
-
-.mp-row + .mp-row {
-  border-top: 1px solid var(--border-soft);
-}
-
-.mp-name {
-  flex-shrink: 0;
-  font-weight: 600;
-}
-
-.mp-path {
-  flex: 1;
-  color: var(--muted);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  direction: rtl; /* clip the front of long paths, keep the leaf visible */
-  text-align: left;
-}
-
-.mp-outside .mp-name,
-.mp-outside .mp-path {
-  color: var(--muted);
-  font-weight: 400;
-  text-decoration: line-through;
-}
-
-.mp-row button {
-  flex-shrink: 0;
-  height: 2rem;
-  box-sizing: border-box;
-  line-height: 1;
 }
 
 .np-actions {

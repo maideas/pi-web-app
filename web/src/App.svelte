@@ -185,12 +185,12 @@
   let projects = $state([])
   let currentProjectId = $state('')
   let showNewProject = $state(false)
-  let showManage = $state(false) // manage-projects popup (detach)
-
-  // Sessions sidebar: collapse state persisted per project; a small
-  // per-session popup menu (⋯) hosts the delete action.
+  // Sidebar (projects on top, sessions below): collapse state
+  // persisted per project; small per-row popup menus (⋯) host the
+  // destructive actions (delete session / detach project).
   let sidebarCollapsed = $state(localStorage.getItem('sidebarCollapsed:default') === '1')
   let sessionMenuFor = $state(null) // session path whose ⋯ menu is open
+  let projectMenuFor = $state(null) // project id whose ⋯ menu is open
 
   const sidebarKey = () => `sidebarCollapsed:${currentProjectId || 'default'}`
 
@@ -205,7 +205,14 @@
 
   function toggleSessionMenu(e, path) {
     e.stopPropagation()
+    projectMenuFor = null
     sessionMenuFor = sessionMenuFor === path ? null : path
+  }
+
+  function toggleProjectMenu(e, id) {
+    e.stopPropagation()
+    sessionMenuFor = null
+    projectMenuFor = projectMenuFor === id ? null : id
   }
 
   async function deleteSession(s) {
@@ -250,11 +257,10 @@
     clearTimeout(dialogTimer)
     dialogTimer = setTimeout(() => {
       showNewProject = false
-      showManage = false
     }, DIALOG_IDLE_MS)
   }
   $effect(() => {
-    if (showNewProject || showManage) pokeDialogTimer()
+    if (showNewProject) pokeDialogTimer()
     else clearTimeout(dialogTimer)
   })
 
@@ -1035,14 +1041,12 @@
     inputEl?.focus()
   }
 
-  async function onProjectChange(e) {
-    const id = e.target.value
-    if (!id || id === currentProjectId) return
-    if (streaming && !window.confirm('Switching projects restarts the agent and kills the running session. Continue?')) {
-      e.target.value = currentProjectId
-      return
-    }
-    await switchProject(id)
+  // Project click in the sidebar: confirm while a run is active, then
+  // switch (which respawns the pi subprocess with the new cwd).
+  async function selectProject(p) {
+    if (p.current || p.outsideWorkspace) return
+    if (streaming && !window.confirm('Switching projects restarts the agent and kills the running session. Continue?')) return
+    await switchProject(p.id)
   }
 
   async function browseDirs(path) {
@@ -1059,12 +1063,9 @@
     if (showNewProject) browseDirs('')
   }
 
-  function toggleManage() {
-    showManage = !showManage
-  }
-
   // Detach = remove from the registry only; the directory stays on disk.
   async function detachProject(p) {
+    projectMenuFor = null
     if (p.current) return
     if (!window.confirm(`Detach project “${p.name}” from the list?\n${p.path}\n\nThe directory itself is not deleted.`)) return
     const resp = await apiPost(`/api/projects/${p.id}/detach`)
@@ -1604,23 +1605,59 @@
   }
 </script>
 
-<svelte:window onclick={() => (sessionMenuFor = null)} />
+<svelte:window onclick={() => { sessionMenuFor = null; projectMenuFor = null }} />
 
 <main>
   <div class="body">
    {#if sidebarCollapsed}
     <!-- Collapsed rail: just the expand toggle at the top left -->
     <div class="sidebar-rail">
-      <button class="sb-toggle" onclick={toggleSidebar} title="Show sessions" aria-label="Show sessions" aria-expanded="false">
+      <button class="sb-toggle" onclick={toggleSidebar} title="Show projects and sessions" aria-label="Show projects and sessions" aria-expanded="false">
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25H5.5v-11Zm5.25 0v11h7.25a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25Z"/></svg>
       </button>
     </div>
    {:else}
     <aside class="sidebar" style="flex-basis: {sidebarWidth}px">
+      <!-- Projects section: capped at 1/3 of the window height -->
+      <div class="sb-section sb-projects">
       <div class="sidebar-head">
-        <button class="sb-toggle" onclick={toggleSidebar} title="Hide sessions" aria-label="Hide sessions" aria-expanded="true">
+        <button class="sb-toggle" onclick={toggleSidebar} title="Hide projects and sessions" aria-label="Hide projects and sessions" aria-expanded="true">
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25H5.5v-11Zm5.25 0v11h7.25a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25Z"/></svg>
         </button>
+        <span class="sb-title">Projects</span>
+        <button class="sb-new" onclick={toggleNewProject} title="New project">add</button>
+      </div>
+      <div class="sb-list">
+        {#each projects as p (p.id)}
+          <div class="sb-item" class:current={p.current} class:outside={p.outsideWorkspace}>
+            <button
+              class="sb-session"
+              onclick={() => selectProject(p)}
+              title={p.path}
+            >
+              <span class="sb-name">{p.name}{p.outsideWorkspace ? ' (outside workspace)' : ''}</span>
+            </button>
+            <button class="sb-menu-btn" title="Project actions" aria-label="Project actions" onclick={(e) => toggleProjectMenu(e, p.id)}>⋯</button>
+            {#if projectMenuFor === p.id}
+              <div class="sb-menu" role="menu">
+                <button
+                  class="sb-menu-item danger"
+                  role="menuitem"
+                  disabled={p.current}
+                  title={p.current ? 'Switch to another project first' : 'Detach (the directory stays on disk)'}
+                  onclick={() => detachProject(p)}
+                >detach</button>
+              </div>
+            {/if}
+          </div>
+        {:else}
+          <div class="sb-empty">No projects registered.</div>
+        {/each}
+      </div>
+      </div>
+      <!-- Sessions section: takes the remaining height -->
+      <div class="sb-section sb-sessions">
+      <div class="sidebar-head">
         <span class="sb-title">Sessions</span>
         <button class="sb-new" onclick={newSession} title="New session">new</button>
       </div>
@@ -1646,8 +1683,9 @@
           <div class="sb-empty">No sessions yet.</div>
         {/each}
       </div>
+      </div>
     </aside>
-    <div class="vsplitter sb-splitter" role="separator" aria-orientation="vertical" aria-label="Resize sessions sidebar" onpointerdown={startSidebarDrag}></div>
+    <div class="vsplitter sb-splitter" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" onpointerdown={startSidebarDrag}></div>
    {/if}
    <div class="workspace" bind:this={bodyEl}>
    <!-- chatRatio marks the splitter position; the chat column ends
@@ -1660,17 +1698,6 @@
         <option value="cream">cream</option>
         <option value="dark">dark</option>
       </select>
-      </div>
-      <div class="tgroup">
-      <select value={currentProjectId} onchange={onProjectChange} title="Project">
-        {#each projects as p (p.id)}
-          <option value={p.id} disabled={p.outsideWorkspace}>
-            {p.name}{p.outsideWorkspace ? ' (outside workspace)' : ''}
-          </option>
-        {/each}
-      </select>
-      <button onclick={toggleNewProject} title="New project">add</button>
-      <button onclick={toggleManage} title="Manage projects">manage</button>
       </div>
       <div class="tgroup">
       <select value={currentModel ? `${currentModel.provider}::${currentModel.id}` : ''} onchange={onModelChange}>
@@ -1726,34 +1753,6 @@
           <label><input type="checkbox" bind:checked={npGit} /> git init</label>
           <button onclick={() => chooseProjectDir(`${npFullPath()}/${npFolder.trim()}`, npGit)} disabled={!npFolder.trim()}>Create</button>
           <button onclick={() => chooseProjectDir(npFullPath(), false)} disabled={!npPath}>Select</button>
-        </div>
-      </div>
-    </div>
-  {/if}
-  {#if showManage}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="np-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (showManage = false)}>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <div class="np-modal" role="dialog" aria-modal="true" aria-label="Manage projects" tabindex="-1" oninput={pokeDialogTimer} onfocusin={pokeDialogTimer} onclick={pokeDialogTimer}>
-        <div class="np-head">
-          <span class="np-title">Manage projects</span>
-          <button class="np-close" onclick={() => (showManage = false)}>×</button>
-        </div>
-        <div class="np-list">
-          {#each projects as p (p.id)}
-            <div class="mp-row" class:mp-outside={p.outsideWorkspace}>
-              <span class="mp-name">{p.name}{p.current ? ' (current)' : ''}{p.outsideWorkspace ? ' — outside workspace' : ''}</span>
-              <span class="mp-path" title={p.path}>{p.path}</span>
-              <button
-                onclick={() => detachProject(p)}
-                disabled={p.current}
-                title={p.current ? 'Switch to another project first' : 'Detach (the directory stays on disk)'}
-              >detach</button>
-            </div>
-          {:else}
-            <div class="np-empty">No projects registered.</div>
-          {/each}
         </div>
       </div>
     </div>
@@ -1881,7 +1880,7 @@
     <textarea
       bind:this={inputEl}
       bind:value={input}
-      onfocus={() => { showNewProject = false; showManage = false }}
+      onfocus={() => (showNewProject = false)}
       onkeydown={onKeydown}
       placeholder={streaming ? 'Agent is working — type to steer, Enter to send…' : 'Prompt pi… (Enter to send, Shift+Enter for newline)'}
       rows="2"
