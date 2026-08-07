@@ -217,21 +217,25 @@ main {
   flex: 1;
 }
 
+/* Row above the Projects header hosting only the collapse toggle,
+   aligned to the top-right of the sidebar */
+.sidebar-top {
+  display: flex;
+  justify-content: flex-end;
+  flex: none;
+  padding: 0.5rem 0.5rem 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
 .sidebar-head {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.5rem 0.5rem 0;
+  padding: 0.5rem 0.5rem 0.5rem 0.6rem;
   min-height: 3.4rem;
   box-sizing: border-box;
   border-bottom: 1px solid var(--border);
   flex: none;
-}
-
-/* The sessions header has no toggle icon; indent the title to align
-   with the list entries. */
-.sb-sessions .sidebar-head {
-  padding-left: 0.6rem;
 }
 
 .sb-title {

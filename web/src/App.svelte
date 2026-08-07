@@ -1661,12 +1661,15 @@
     </div>
    {:else}
     <aside class="sidebar" style="flex-basis: {sidebarWidth}px">
-      <!-- Projects section: capped at 1/3 of the window height -->
-      <div class="sb-section sb-projects">
-      <div class="sidebar-head">
+      <!-- Collapse toggle in its own row above the Projects header -->
+      <div class="sidebar-top">
         <button class="sb-toggle" onclick={toggleSidebar} title="Hide projects and sessions" aria-label="Hide projects and sessions" aria-expanded="true">
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25H5.5v-11Zm5.25 0v11h7.25a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25Z"/></svg>
         </button>
+      </div>
+      <!-- Projects section: capped at 1/3 of the window height -->
+      <div class="sb-section sb-projects">
+      <div class="sidebar-head">
         <span class="sb-title">Projects</span>
         <button class="sb-new" onclick={toggleNewProject} title="New project">add</button>
       </div>
