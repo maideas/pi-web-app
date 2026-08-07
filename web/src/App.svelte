@@ -1049,6 +1049,26 @@
     await switchProject(p.id)
   }
 
+  // No project selected (e.g. the current one was detached): chat and
+  // sessions are blocked until the user actively opens or creates one.
+  const noProject = $derived(projects.length > 0 && !currentProjectId)
+
+  // Local UI reset after the current project was detached (by this tab
+  // or another one): clear the chat and wait for an explicit choice.
+  function enterDetachedMode(name) {
+    entries = [
+      { role: 'system', text: `✖ project “${name}” was detached — select a project on the left or create a new one` },
+    ]
+    sessions = []
+    currentSessionPath = ''
+    selectedFile = null
+    diffView = null
+    dirEntries = []
+    browserPath = ''
+    browserParent = null
+    stats = null
+  }
+
   async function browseDirs(path) {
     const resp = await apiGet(`/api/dirs?path=${encodeURIComponent(path)}`)
     if (resp.error) return
@@ -1064,14 +1084,25 @@
   }
 
   // Detach = remove from the registry only; the directory stays on disk.
+  // Detaching the current project clears the chat; the user must then
+  // actively select another project (or create one) to continue. Not
+  // allowed while the agent is working — finish or abort the run first.
   async function detachProject(p) {
     projectMenuFor = null
-    if (p.current) return
-    if (!window.confirm(`Detach project “${p.name}” from the list?\n${p.path}\n\nThe directory itself is not deleted.`)) return
+    if (p.current && streaming) {
+      entries.push({ role: 'system', text: '⚠️ cannot detach the current project while the agent is working — wait or abort first' })
+      return
+    }
+    const extra = p.current
+      ? '\n\nThis is the current project: the chat will be cleared and you must select another project to continue.'
+      : ''
+    if (!window.confirm(`Detach project “${p.name}” from the list?\n${p.path}\n\nThe directory itself is not deleted.${extra}`)) return
     const resp = await apiPost(`/api/projects/${p.id}/detach`)
     if (!resp.success) {
       entries.push({ role: 'system', text: `⚠️ ${resp.error ?? 'failed to detach project'}` })
+      return
     }
+    if (resp.wasCurrent) enterDetachedMode(p.name)
     await loadProjects()
   }
 
@@ -1276,6 +1307,13 @@
         reinit()
         break
 
+      case 'project_detached':
+        // The current project was detached (possibly by another tab):
+        // clear the chat and wait for an explicit project choice.
+        enterDetachedMode(ev.project?.name ?? '?')
+        loadProjects()
+        break
+
       case 'project_switched':
         // Another tab (or client) switched the active project: our SSE
         // stream is attached to the now-dead pi process, so reconnect
@@ -1411,6 +1449,10 @@
   }
 
   async function sendPrompt() {
+    if (noProject) {
+      entries.push({ role: 'system', text: '⚠️ no project selected — pick one on the left or create a new one first' })
+      return
+    }
     const trimmed = input.trim()
     if (trimmed) pushPromptHistory(trimmed)
     if (trimmed.startsWith('/')) {
@@ -1474,6 +1516,7 @@
   }
 
   async function newSession() {
+    if (noProject) return
     await apiPost('/new_session')
     entries = []
     await refreshSessions()
@@ -1643,8 +1686,8 @@
                 <button
                   class="sb-menu-item danger"
                   role="menuitem"
-                  disabled={p.current}
-                  title={p.current ? 'Switch to another project first' : 'Detach (the directory stays on disk)'}
+                  disabled={p.current && streaming}
+                  title={p.current && streaming ? 'Wait for the agent to finish (or abort) first' : 'Detach (the directory stays on disk)'}
                   onclick={() => detachProject(p)}
                 >detach</button>
               </div>

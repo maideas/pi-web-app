@@ -873,19 +873,23 @@ def set_last_file(pid):
 def detach_project(pid):
     """Remove a project from the registry (the directory stays on disk).
 
-    The currently active project cannot be detached — switch to another
-    project first.
+    Detaching the currently active project is allowed: the pi process
+    keeps running in the old directory (something must host it), but no
+    project is marked current anymore — the frontend clears the chat and
+    blocks prompts until the user actively opens another project. Other
+    tabs learn via a `project_detached` broadcast.
     """
     with switch_lock:
-        if current["project"]["id"] == pid:
-            return jsonify({"success": False, "error": "cannot detach the current project"}), 400
         projects = load_projects()
         entry = next((p for p in projects if p["id"] == pid), None)
         if entry is None:
             return jsonify({"success": False, "error": "unknown project"}), 404
         projects.remove(entry)
         save_projects(projects)
-    return jsonify({"success": True})
+        was_current = current["project"]["id"] == pid
+        if was_current:
+            current["pi"].broadcast({"type": "project_detached", "project": entry})
+    return jsonify({"success": True, "wasCurrent": was_current})
 
 
 # ---------------------------------------------------------------------------
