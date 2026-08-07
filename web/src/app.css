@@ -177,13 +177,17 @@ main {
 
 /* ---------- sessions sidebar ---------- */
 
-/* Collapsed state: a slim rail hosting only the expand toggle */
+/* Collapsed state: a slim rail hosting the expand toggle with the
+   settings button below it; the right border keeps the vertical
+   separator line towards the chat area */
 .sidebar-rail {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   padding: 0.5rem 0.5rem 0 0;
+  border-right: 1px solid var(--border);
+  margin-right: 14px; /* same gap to the chat column as .sb-splitter */
 }
 
 .sidebar {
@@ -217,11 +221,12 @@ main {
   flex: 1;
 }
 
-/* Row above the Projects header hosting only the collapse toggle,
-   aligned to the top-right of the sidebar */
+/* Row above the Projects header hosting the settings button and the
+   collapse toggle, aligned to the top-right of the sidebar */
 .sidebar-top {
   display: flex;
   justify-content: flex-end;
+  gap: 0.2rem;
   flex: none;
   padding: 0.5rem 0.5rem 0.5rem 0;
   border-bottom: 1px solid var(--border);
@@ -242,23 +247,6 @@ main {
   flex: 1;
   font-weight: 600;
   font-size: 0.95rem;
-}
-
-/* Bottom row of the sidebar: hosts the settings button, left-aligned,
-   with a separator line above it */
-.sidebar-bottom {
-  display: flex;
-  justify-content: flex-start;
-  flex: none;
-  padding: 0.8rem 0.5rem 0.4rem 0;
-  border-top: 1px solid var(--border);
-}
-
-/* Collapsed-rail variant: pinned to the bottom of the slim rail */
-.sidebar-bottom.rail {
-  margin-top: auto;
-  padding: 0.8rem 0 0.5rem;
-  border-top: 1px solid var(--border);
 }
 
 .sb-toggle {
