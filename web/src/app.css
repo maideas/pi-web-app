@@ -244,6 +244,23 @@ main {
   font-size: 0.95rem;
 }
 
+/* Bottom row of the sidebar: hosts the settings button, left-aligned,
+   with a separator line above it */
+.sidebar-bottom {
+  display: flex;
+  justify-content: flex-start;
+  flex: none;
+  padding: 0.8rem 0.5rem 0.4rem 0;
+  border-top: 1px solid var(--border);
+}
+
+/* Collapsed-rail variant: pinned to the bottom of the slim rail */
+.sidebar-bottom.rail {
+  margin-top: auto;
+  padding: 0.8rem 0 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
 .sb-toggle {
   background: none;
   border: none;
@@ -560,6 +577,43 @@ aside {
    forcing the toolbar to wrap */
 .toolbar select {
   min-width: 0;
+}
+
+/* Settings popup (shares the .np-modal shell) */
+.settings-modal {
+  max-height: none;
+}
+
+.settings-body {
+  padding: 0.8rem;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.settings-label {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.theme-options {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.theme-opt {
+  height: 2rem;
+  box-sizing: border-box;
+  line-height: 1;
+  padding: 0.4rem 0.8rem;
+}
+
+.theme-opt.active {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: -2px;
 }
 
 /* New-project directory picker (modal popup) */
