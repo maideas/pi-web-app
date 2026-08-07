@@ -2,6 +2,10 @@
   <img src="web/public/logo.svg" width="128" alt="pi web UI logo">
 </p>
 
+<p align="center">
+  <img src="doc/pi-agent-web-ui-screenshot.png" width="720" alt="pi agent web UI screenshot">
+</p>
+
 # pi agent web UI
 
 A browser-based chat interface for the [pi coding agent](https://github.com/earendil-works/pi).
@@ -81,10 +85,10 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/jsconfig.json`](web/jsconfig.json) | JS type-checking config (checkJs) for the frontend |
 | [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, dompurify, highlight.js, github-slugger) |
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
-| [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (first increment implemented) |
-| [`theme-preview.md`](theme-preview.md) | Demo document for comparing the themes in the file viewer |
-| [`code-and-security-review.md`](code-and-security-review.md) | Code and security review report (findings since remediated) |
-| [`fable-code-and-security-review.md`](fable-code-and-security-review.md) | Post-fix verification review of the remediations |
+| [`doc/brainstorming-about-project-handling.md`](doc/brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (first increment implemented) |
+| [`doc/theme-preview.md`](doc/theme-preview.md) | Demo document for comparing the themes in the file viewer |
+| [`doc/code-and-security-review.md`](doc/code-and-security-review.md) | Code and security review report (findings since remediated) |
+| [`doc/fable-code-and-security-review.md`](doc/fable-code-and-security-review.md) | Post-fix verification review of the remediations |
 | [`LICENSE`](LICENSE) | License |
 | [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask) |
 | [`web/public/`](web/public/) | Static assets (favicon, logo, icons) copied into `dist/` |
