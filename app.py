@@ -963,8 +963,11 @@ def git_status_map(root: Path) -> dict[str, str] | None:
 
 
 # Which status wins when aggregating a directory's children. "ignored"
-# ranks lowest: a directory only shows as ignored if nothing under it
-# has a stronger status.
+# ranks lowest and, unlike the others, never propagates upward from
+# children: git collapses a fully ignored directory into a single
+# `!! dir/` entry, so only an exact match (or an ignored ancestor dir)
+# means the directory itself is ignored. Containing ignored children
+# (e.g. dist/ inside a tracked dir) must not mark it as ignored.
 _GIT_RANK = {"modified": 3, "added": 2, "untracked": 1, "ignored": 0}
 
 
@@ -973,11 +976,14 @@ def git_dir_status(statuses: dict[str, str], rel: str) -> str | None:
     prefix = rel + "/"
     best = None
     for path, status in statuses.items():
-        under = (
+        self_or_ancestor = (
             path.rstrip("/") == rel
-            or path.startswith(prefix)
             or (path.endswith("/") and prefix.startswith(path))
         )
+        if status == "ignored":
+            under = self_or_ancestor
+        else:
+            under = self_or_ancestor or path.startswith(prefix)
         if under and (best is None or _GIT_RANK[status] > _GIT_RANK[best]):
             best = status
     return best
