@@ -11,8 +11,10 @@ talks JSONL (newline-delimited JSON) to pi's stdin/stdout.
 
 Features:
 
-- Chat with markdown rendering, syntax highlighting, and collapsible
-  thinking/tool blocks
+- Chat with markdown rendering, syntax highlighting, collapsible
+  thinking/tool blocks, and copy buttons for messages and code blocks
+- Shell-style prompt history recall (ArrowUp/ArrowDown, per project)
+  and a message navigator for jumping to earlier user messages
 - Steerable: the input stays usable while the agent works — send to
   queue a steering message, or abort
 - Image and text-file attachments
@@ -21,8 +23,9 @@ Features:
   session and open file; sessions are auto-named from chat content
   and can be deleted from a manage popup
 - Slash commands with autocomplete, mapped to their RPC equivalents
-- Project file browser with markdown, HTML, and image preview, git
-  status badges, a per-file git diff view, download, and delete
+- Project file browser with markdown (incl. working in-page anchor
+  links), HTML, and image preview, git status badges, a per-file
+  git diff view, download, and delete
 - Light, cream, and dark themes
 
 **Limitation (by design):** single-user. One pi subprocess and one shared
@@ -75,7 +78,7 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/index.html`](web/index.html) | Vite HTML entry |
 | [`web/vite.config.js`](web/vite.config.js) | Vite config; dev-server proxy for the backend endpoints |
 | [`web/jsconfig.json`](web/jsconfig.json) | JS type-checking config (checkJs) for the frontend |
-| [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, dompurify, highlight.js) |
+| [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, dompurify, highlight.js, github-slugger) |
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
 | [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (first increment implemented) |
 | [`theme-preview.md`](theme-preview.md) | Demo document for comparing the themes in the file viewer |

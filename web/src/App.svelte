@@ -685,16 +685,33 @@
   // The position is measured synchronously at call time — before the
   // pending DOM update grows scrollHeight — so growth without scroll
   // events can never corrupt the decision (a scroll-event flag could).
+  // Forced calls (submit, history load) must never be swallowed by an
+  // already-queued non-forced one, and they re-pin once more after the
+  // first frame: layout keeps shifting right after a submit (the prompt
+  // textarea shrinks back, attached images decode, highlighting settles),
+  // which would otherwise leave the view short of the bottom.
   let scrollQueued = false
-  async function scrollToBottom(force = false) {
-    if (scrollQueued || !chatEl) return
+  let scrollForce = false
+  function scrollToBottom(force = false) {
+    if (!chatEl) return
     const stick = force || chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 40
     if (!stick) return
+    scrollForce ||= force
+    if (scrollQueued) return
     scrollQueued = true
     requestAnimationFrame(async () => {
       scrollQueued = false
+      const forced = scrollForce
+      scrollForce = false
       await tick()
-      if (chatEl) chatEl.scrollTop = chatEl.scrollHeight
+      const pin = () => {
+        if (chatEl) chatEl.scrollTop = chatEl.scrollHeight
+      }
+      pin()
+      if (forced) {
+        requestAnimationFrame(pin)
+        setTimeout(pin, 80) // late async growth (image decode etc.)
+      }
     })
   }
 
@@ -1128,8 +1145,15 @@
             .map((c) => c.thinking)
             .join('')
           if (a) {
-            a.text = text
-            if (thinking) a.thinking = thinking
+            if (text || thinking) {
+              a.text = text
+              if (thinking) a.thinking = thinking
+            } else {
+              // Tool-call-only turn: drop the blank placeholder pushed at
+              // message_start, otherwise it renders as an empty bubble
+              // (the large vertical gap; reload skips these in loadHistory).
+              entries.pop()
+            }
           } else if (text || thinking) {
             entries.push({ role: 'assistant', text, thinking })
           }
