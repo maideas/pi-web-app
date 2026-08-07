@@ -186,8 +186,50 @@
   let currentProjectId = $state('')
   let showNewProject = $state(false)
   let showManage = $state(false) // manage-projects popup (detach)
-  let showManageSessions = $state(false) // manage-sessions popup (delete from disk)
-  let msChecked = $state({}) // session path -> checked for deletion
+
+  // Sessions sidebar: collapse state persisted per project; a small
+  // per-session popup menu (⋯) hosts the delete action.
+  let sidebarCollapsed = $state(localStorage.getItem('sidebarCollapsed:default') === '1')
+  let sessionMenuFor = $state(null) // session path whose ⋯ menu is open
+
+  const sidebarKey = () => `sidebarCollapsed:${currentProjectId || 'default'}`
+
+  function loadSidebarState() {
+    sidebarCollapsed = localStorage.getItem(sidebarKey()) === '1'
+  }
+
+  function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed
+    localStorage.setItem(sidebarKey(), sidebarCollapsed ? '1' : '0')
+  }
+
+  function toggleSessionMenu(e, path) {
+    e.stopPropagation()
+    sessionMenuFor = sessionMenuFor === path ? null : path
+  }
+
+  async function deleteSession(s) {
+    sessionMenuFor = null
+    const warning = s.current
+      ? '\n\nThis is the current session — you will be switched to the latest remaining session (or a new one).'
+      : ''
+    if (!window.confirm(`Delete session “${s.name}” from disk?${warning}\n\nThis cannot be undone.`)) return
+    const resp = await apiPost('/delete_sessions', { paths: [s.path] })
+    if (resp.errors?.length) {
+      entries.push({ role: 'system', text: `⚠️ ${resp.errors.map((e) => `${e.path}: ${e.error}`).join('\n')}` })
+    }
+    await refreshSessions()
+    // If the current session was deleted, move to the latest remaining
+    // session (list is newest-first); if none is left, start a new one.
+    if (s.current && resp.deleted?.includes(s.path)) {
+      const next = sessions[0]
+      if (next) {
+        await switchToSession(next.path)
+      } else {
+        await newSession()
+      }
+    }
+  }
 
   // New-project directory picker (popup). Shows only directories and is
   // confined to the workspace root (users of a web app usually don't
@@ -209,11 +251,10 @@
     dialogTimer = setTimeout(() => {
       showNewProject = false
       showManage = false
-      showManageSessions = false
     }, DIALOG_IDLE_MS)
   }
   $effect(() => {
-    if (showNewProject || showManage || showManageSessions) pokeDialogTimer()
+    if (showNewProject || showManage) pokeDialogTimer()
     else clearTimeout(dialogTimer)
   })
 
@@ -260,15 +301,23 @@
   // directory/file pane (sits on the right side of the gap).
   let chatRatio = $state(Number(localStorage.getItem('chatRatio')) || 0.5)
   let bodyEl = $state(null)
-  // Shared pointer-drag plumbing for both splitters: `apply` maps a
-  // pointer event to the new ratio, `key` persists it on release.
+  // Width of the sessions sidebar in px, draggable via its right-edge
+  // splitter; persisted like the other split ratios. Defaults to 1/8
+  // of the window width (clamped to the drag limits).
+  let sidebarWidth = $state(
+    Number(localStorage.getItem('sidebarWidth')) ||
+      Math.min(400, Math.max(150, Math.round(window.innerWidth / 8)))
+  )
+  // Shared pointer-drag plumbing for the splitters: `apply` maps a
+  // pointer event to the new ratio/width, `key` persists it on release.
   function dragSplit(ev, apply, key) {
     ev.preventDefault()
     const move = (e) => apply(e)
     const up = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
-      localStorage.setItem(key, String(key === 'chatRatio' ? chatRatio : browserRatio))
+      const value = { chatRatio, browserRatio, sidebarWidth }[key]
+      localStorage.setItem(key, String(value))
       updateFades()
     }
     window.addEventListener('pointermove', move)
@@ -287,6 +336,14 @@
       const r = (e.clientX - rect.left) / rect.width
       chatRatio = Math.min(0.8, Math.max(0.2, r))
     }, 'chatRatio')
+  }
+  function startSidebarDrag(ev) {
+    // The sidebar starts at the window's left padding edge; measure the
+    // current left edge once and track the pointer from there.
+    const left = ev.currentTarget.parentElement.getBoundingClientRect().left
+    dragSplit(ev, (e) => {
+      sidebarWidth = Math.min(400, Math.max(150, e.clientX - left))
+    }, 'sidebarWidth')
   }
 
   // Pending attachments: [{ kind: 'image', name, data (base64), mimeType, url (data URL) }
@@ -947,6 +1004,7 @@
       loadProjects(),
     ])
     loadPromptHistory() // per project; needs currentProjectId from loadProjects
+    loadSidebarState() // sidebar collapse state is per project too
     // Restore the project's remembered viewer file, README as fallback.
     const remembered = projects.find((p) => p.current)?.lastFile ?? 'README.md'
     let f = await loadViewerFile(remembered)
@@ -1005,55 +1063,6 @@
     showManage = !showManage
   }
 
-  function toggleManageSessions() {
-    showManageSessions = !showManageSessions
-    if (showManageSessions) {
-      msChecked = {}
-      refreshSessions()
-    }
-  }
-
-  const msSelectedPaths = () => sessions.filter((s) => msChecked[s.path]).map((s) => s.path)
-
-  // All sessions checked? Drives the all/none toggle.
-  const msAllChecked = () => {
-    return sessions.length > 0 && sessions.every((s) => msChecked[s.path])
-  }
-
-  function msToggleAll() {
-    msChecked = msAllChecked()
-      ? {}
-      : Object.fromEntries(sessions.map((s) => [s.path, true]))
-  }
-
-  async function deleteCheckedSessions() {
-    const paths = msSelectedPaths()
-    if (!paths.length) return
-    const current = sessions.find((s) => s.current)
-    const includesCurrent = !!current && paths.includes(current.path)
-    const warning = includesCurrent
-      ? '\n\nThis includes the current session — you will be switched to the latest remaining session (or a new one).'
-      : ''
-    if (!window.confirm(`Delete ${paths.length} session${paths.length > 1 ? 's' : ''} from disk?${warning}\n\nThis cannot be undone.`)) return
-    const resp = await apiPost('/delete_sessions', { paths })
-    if (resp.errors?.length) {
-      entries.push({ role: 'system', text: `⚠️ ${resp.errors.map((e) => `${e.path}: ${e.error}`).join('\n')}` })
-    }
-    msChecked = {}
-    showManageSessions = false
-    await refreshSessions()
-    // If the current session was deleted, move to the latest remaining
-    // session (list is newest-first); if none is left, start a new one.
-    if (includesCurrent && resp.deleted?.includes(current.path)) {
-      const next = sessions[0]
-      if (next) {
-        await switchToSession(next.path)
-      } else {
-        await newSession()
-      }
-    }
-  }
-
   // Detach = remove from the registry only; the directory stays on disk.
   async function detachProject(p) {
     if (p.current) return
@@ -1096,12 +1105,6 @@
       inputEl?.focus()
     }
     await refreshSessions()
-  }
-
-  async function onSessionChange(e) {
-    const path = e.target.value
-    if (!path || path === currentSessionPath) return
-    await switchToSession(path)
   }
 
   function handleEvent(ev) {
@@ -1601,8 +1604,52 @@
   }
 </script>
 
+<svelte:window onclick={() => (sessionMenuFor = null)} />
+
 <main>
-  <div class="body" bind:this={bodyEl}>
+  <div class="body">
+   {#if sidebarCollapsed}
+    <!-- Collapsed rail: just the expand toggle at the top left -->
+    <div class="sidebar-rail">
+      <button class="sb-toggle" onclick={toggleSidebar} title="Show sessions" aria-label="Show sessions" aria-expanded="false">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25H5.5v-11Zm5.25 0v11h7.25a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25Z"/></svg>
+      </button>
+    </div>
+   {:else}
+    <aside class="sidebar" style="flex-basis: {sidebarWidth}px">
+      <div class="sidebar-head">
+        <button class="sb-toggle" onclick={toggleSidebar} title="Hide sessions" aria-label="Hide sessions" aria-expanded="true">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25H5.5v-11Zm5.25 0v11h7.25a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25Z"/></svg>
+        </button>
+        <span class="sb-title">Sessions</span>
+        <button class="sb-new" onclick={newSession} title="New session">new</button>
+      </div>
+      <div class="sb-list">
+        {#each sessions as s (s.path)}
+          <div class="sb-item" class:current={s.current}>
+            <button
+              class="sb-session"
+              onclick={() => !s.current && switchToSession(s.path)}
+              title={s.name}
+            >
+              <span class="sb-name">{s.name}</span>
+              <span class="sb-date">{new Date(s.mtime * 1000).toLocaleString()}</span>
+            </button>
+            <button class="sb-menu-btn" title="Session actions" aria-label="Session actions" onclick={(e) => toggleSessionMenu(e, s.path)}>⋯</button>
+            {#if sessionMenuFor === s.path}
+              <div class="sb-menu" role="menu">
+                <button class="sb-menu-item danger" role="menuitem" onclick={() => deleteSession(s)}>delete</button>
+              </div>
+            {/if}
+          </div>
+        {:else}
+          <div class="sb-empty">No sessions yet.</div>
+        {/each}
+      </div>
+    </aside>
+    <div class="vsplitter sb-splitter" role="separator" aria-orientation="vertical" aria-label="Resize sessions sidebar" onpointerdown={startSidebarDrag}></div>
+   {/if}
+   <div class="workspace" bind:this={bodyEl}>
    <!-- chatRatio marks the splitter position; the chat column ends
         50px earlier, preserving the gap that hosts the dot menu -->
    <div class="chatcol" style="flex: 0 0 calc({(chatRatio * 100).toFixed(2)}% - 51px)">
@@ -1638,20 +1685,6 @@
           <option value={l} selected={l === thinkingLevel}>{l}</option>
         {/each}
       </select>
-      </div>
-      <div class="tgroup">
-      <select class="sessionselect" value={currentSessionPath} onchange={onSessionChange}>
-        {#if !currentSessionPath}
-          <option value="" disabled>sessions…</option>
-        {/if}
-        {#each sessions as s (s.path)}
-          <option value={s.path}>
-            {s.name}{s.current ? ' (current)' : ''} — {new Date(s.mtime * 1000).toLocaleString()}
-          </option>
-        {/each}
-      </select>
-      <button onclick={newSession}>new</button>
-      <button onclick={toggleManageSessions} title="Manage sessions">manage</button>
       </div>
     </div>
   {#if showNewProject}
@@ -1721,37 +1754,6 @@
           {:else}
             <div class="np-empty">No projects registered.</div>
           {/each}
-        </div>
-      </div>
-    </div>
-  {/if}
-  {#if showManageSessions}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="np-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (showManageSessions = false)}>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <div class="np-modal" role="dialog" aria-modal="true" aria-label="Manage sessions" tabindex="-1" oninput={pokeDialogTimer} onfocusin={pokeDialogTimer} onclick={pokeDialogTimer}>
-        <div class="np-head">
-          <span class="np-title">Manage sessions</span>
-          <button class="np-close" onclick={() => (showManageSessions = false)}>×</button>
-        </div>
-        <div class="ms-toolbar">
-          <button class="ms-all" onclick={msToggleAll}>{msAllChecked() ? 'select none' : 'select all'}</button>
-        </div>
-        <div class="np-list">
-          {#each sessions as s (s.path)}
-            <label class="mp-row ms-row" class:ms-current={s.current}>
-              <input type="checkbox" bind:checked={msChecked[s.path]} />
-              <span class="mp-name">{s.name}{s.current ? ' (current)' : ''}</span>
-              <span class="ms-date">{new Date(s.mtime * 1000).toLocaleString()}</span>
-            </label>
-          {:else}
-            <div class="np-empty">No sessions found.</div>
-          {/each}
-        </div>
-        <div class="np-actions">
-          <span class="ms-count">{msSelectedPaths().length} selected</span>
-          <button onclick={deleteCheckedSessions} disabled={!msSelectedPaths().length} title="Delete the checked sessions from disk">delete</button>
         </div>
       </div>
     </div>
@@ -1879,7 +1881,7 @@
     <textarea
       bind:this={inputEl}
       bind:value={input}
-      onfocus={() => { showNewProject = false; showManage = false; showManageSessions = false }}
+      onfocus={() => { showNewProject = false; showManage = false }}
       onkeydown={onKeydown}
       placeholder={streaming ? 'Agent is working — type to steer, Enter to send…' : 'Prompt pi… (Enter to send, Shift+Enter for newline)'}
       rows="2"
@@ -2010,5 +2012,6 @@
       </div>
     </div>
    </aside>
+   </div>
   </div>
 </main>

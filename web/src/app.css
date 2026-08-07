@@ -162,7 +162,213 @@ main {
   flex: 1;
   display: flex;
   min-height: 0;
+}
+
+/* Everything right of the sessions sidebar: chat column + file panes.
+   Positioned so the gap-dots / splitter percentages stay relative to
+   this area, not to the whole window including the sidebar. */
+.workspace {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
   position: relative;
+}
+
+/* ---------- sessions sidebar ---------- */
+
+/* Collapsed state: a slim rail hosting only the expand toggle */
+.sidebar-rail {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.5rem 0.5rem 0 0;
+}
+
+.sidebar {
+  flex: 0 0 12.5vw; /* fallback; overridden inline by the draggable splitter */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Draggable right edge of the sessions sidebar: reuses the .vsplitter
+   look/hit-area; the margin provides the gap to the chat column. */
+.sb-splitter {
+  margin-right: 14px;
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0.5rem 0;
+  min-height: 3.4rem;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+}
+
+.sb-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.sb-toggle {
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 0.35rem 0.45rem;
+  height: 2rem;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.sb-toggle:hover {
+  color: var(--fg);
+  background: var(--panel-alt);
+}
+
+.sb-new {
+  height: 2rem;
+  box-sizing: border-box;
+  line-height: 1;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+}
+
+.sb-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.4rem 0.4rem 0.4rem 0;
+}
+
+.sb-item {
+  position: relative; /* anchors the ⋯ popup menu */
+  display: flex;
+  align-items: stretch;
+  border-radius: 8px;
+}
+
+.sb-item + .sb-item {
+  margin-top: 2px;
+}
+
+.sb-item:hover {
+  background: var(--panel);
+}
+
+.sb-item.current {
+  background: var(--user-bg);
+  color: var(--user-fg);
+}
+
+.sb-session {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: inherit;
+  text-align: left;
+  padding: 0.45rem 0.2rem 0.45rem 0.6rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.sb-item.current .sb-session {
+  cursor: default;
+}
+
+.sb-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sb-date {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.sb-item.current .sb-date {
+  color: var(--user-fg);
+  opacity: 0.7;
+}
+
+/* ⋯ button: only revealed on hover (always for the open menu) */
+.sb-menu-btn {
+  flex: none;
+  align-self: center;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--muted);
+  padding: 0.2rem 0.45rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.sb-item:hover .sb-menu-btn,
+.sb-menu-btn:focus-visible,
+.sb-item:has(.sb-menu) .sb-menu-btn {
+  opacity: 1;
+}
+
+.sb-menu-btn:hover {
+  color: var(--fg);
+  background: var(--panel-alt);
+}
+
+/* Per-session popup menu, anchored to the row's right edge */
+.sb-menu {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 4px;
+  z-index: 20;
+  min-width: 8rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.sb-menu-item {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--fg);
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.sb-menu-item:hover {
+  background: var(--panel-alt);
+}
+
+.sb-menu-item.danger {
+  color: var(--err);
+}
+
+.sb-empty {
+  padding: 0.8rem 0.6rem;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 /* Draggable divider between the chat column and the file pane: sits on
@@ -342,19 +548,6 @@ aside {
   font-weight: 600;
 }
 
-.ms-toolbar {
-  padding: 0.4rem 0.8rem;
-  border-bottom: 1px solid var(--border-soft);
-}
-
-.ms-all {
-  height: 1.6rem;
-  padding: 0 0.6rem;
-  font-size: 0.8rem;
-  line-height: 1;
-  box-sizing: border-box;
-}
-
 .np-close {
   background: none;
   color: var(--muted);
@@ -426,34 +619,6 @@ aside {
   height: 2rem;
   box-sizing: border-box;
   line-height: 1;
-}
-
-/* Manage-sessions popup rows */
-.ms-row {
-  cursor: pointer;
-}
-
-.ms-row.ms-current {
-  cursor: default;
-  color: var(--muted);
-}
-
-.ms-row .mp-name {
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.ms-date {
-  flex-shrink: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.ms-count {
-  flex: 1;
-  color: var(--muted);
 }
 
 .np-actions {
@@ -1039,12 +1204,6 @@ select {
   /* explicit height so buttons (add/new/up/download) can match it */
   height: 2rem;
   box-sizing: border-box;
-}
-
-/* Fixed width so an empty session list (new project) doesn't resize
-   the select and flicker the whole toolbar */
-select.sessionselect {
-  width: 170px;
 }
 
 .attach {

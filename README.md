@@ -20,8 +20,9 @@ Features:
 - Image and text-file attachments
 - Model and thinking-level selectors, live token/cost/context stats
 - Multiple projects and sessions: switch projects, restore the last
-  session and open file; sessions are auto-named from chat content
-  and can be deleted from a manage popup
+  session and open file; sessions live in a collapsible sidebar
+  (collapse state remembered per project), are auto-named from chat
+  content, and can be deleted from a per-session menu
 - Slash commands with autocomplete, mapped to their RPC equivalents
 - Project file browser with markdown (incl. working in-page anchor
   links), HTML, and image preview, git status badges, a per-file
