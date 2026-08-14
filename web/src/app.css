@@ -1718,13 +1718,29 @@ select {
   background: #fff;
 }
 
-/* Unified git diff: GitHub-style full-width line backgrounds. Each
-   line is a block (inline-block would not wrap under white-space: pre);
-   min-width keeps backgrounds full-width when lines overflow horizontally. */
+/* In-file diff: complete file content with GitHub-style full-width
+   backgrounds on changed lines and a +/- gutter. Each line is a block
+   (inline-block would not wrap under white-space: pre); min-width keeps
+   backgrounds full-width when lines overflow horizontally. */
 .filecontent.diff .dline {
   display: block;
   min-width: fit-content;
   width: 100%;
+}
+
+.filecontent.diff .dgut {
+  display: inline-block;
+  width: 1.4em;
+  color: var(--muted);
+  user-select: none;
+}
+
+.filecontent.diff .dline.add .dgut {
+  color: var(--ok, #3fa659);
+}
+
+.filecontent.diff .dline.del .dgut {
+  color: var(--err, #e05252);
 }
 
 .filecontent.diff .dline.add {
@@ -1735,14 +1751,6 @@ select {
 .filecontent.diff .dline.del {
   background: rgba(224, 82, 82, 0.16); /* --err tinted */
   color: var(--fg);
-}
-
-.filecontent.diff .dline.hunk {
-  color: var(--link);
-}
-
-.filecontent.diff .dline.meta {
-  color: var(--muted);
 }
 
 .filecontent.placeholder,

@@ -19,6 +19,9 @@ import json
 import logging
 import os
 import queue
+import re
+import shutil
+import socket
 import subprocess
 import threading
 import uuid
@@ -52,7 +55,22 @@ app = Flask(__name__, static_folder=DIST_DIR, static_url_path="")
 # Reject requests whose Host header is not a local name: a remote page
 # could otherwise use DNS rebinding to become same-origin with this app
 # and drive the agent (the CSRF header check doesn't help against that).
-app.config["TRUSTED_HOSTS"] = ["127.0.0.1", "localhost", "::1"]
+# Bind address: $HOST if set, otherwise the machine's primary LAN address
+# (falls back to loopback). Determined once at startup so TRUSTED_HOSTS
+# and app.run() agree.
+def _default_host() -> str:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("192.0.2.1", 1))  # no traffic sent; just picks a route
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+BIND_HOST = os.environ.get("HOST") or _default_host()
+app.config["TRUSTED_HOSTS"] = ["127.0.0.1", "localhost", "::1", BIND_HOST]
 # Cap request bodies (image attachments are base64 in JSON): without a
 # limit, a single request could buffer arbitrary amounts of memory.
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
@@ -813,16 +831,62 @@ def list_projects():
     )
 
 
+GIT_URL_RE = re.compile(r"^(https?|git|ssh)://|^git@[\w.-]+:")
+
+
+def register_project(p: Path):
+    """Add an existing directory to the registry (id-checked)."""
+    projects = load_projects()
+    for existing in projects:
+        if existing["path"] == str(p):
+            return jsonify({"success": False, "error": "already registered"}), 409
+    entry = new_project_entry(p)
+    projects.append(entry)
+    save_projects(projects)
+    return jsonify({"success": True, "project": entry})
+
+
 @app.route("/api/projects", methods=["POST"])
 def create_project():
     """Register an existing directory or create a new one as a project.
 
-    Body: {path, gitInit?}. If `path` exists it is registered as-is;
-    otherwise it is created (with optional `git init`). The project name
-    is the leaf directory name.
+    Body: {path, gitInit?} or {gitUrl, folder?}. With `path`: an
+    existing directory is registered as-is, a missing one is created
+    (with optional `git init`). With `gitUrl`: the repo is cloned into
+    the workspace (into `folder` if given, else the repo name derived
+    from the URL). The project name is the leaf directory name.
     """
     body = request.get_json(silent=True)
-    if not isinstance(body, dict) or not body.get("path"):
+    if not isinstance(body, dict):
+        return jsonify({"success": False, "error": "missing path"}), 400
+    git_url = (body.get("gitUrl") or "").strip()
+    if git_url:
+        if not GIT_URL_RE.match(git_url) or any(c in git_url for c in " \t\n`$;&|"):
+            return jsonify({"success": False, "error": "invalid git URL"}), 400
+        folder = (body.get("folder") or "").strip()
+        if not folder:
+            # Derive the folder from the URL: .../group/repo.git -> repo
+            folder = re.sub(r"\.git$", "", git_url.rstrip("/").rsplit("/", 1)[-1])
+        if not re.fullmatch(r"[\w.-]+", folder) or folder in (".", ".."):
+            return jsonify({"success": False, "error": "invalid folder name"}), 400
+        p = (WORKSPACE_ROOT / folder).resolve(strict=False)
+        if p == WORKSPACE_ROOT or not contained(p):
+            return jsonify({"success": False, "error": "path outside workspace"}), 403
+        if p.exists():
+            return jsonify({"success": False, "error": f"{p.name} already exists"}), 409
+        try:
+            proc = subprocess.run(
+                ["git", "clone", "--", git_url, str(p)],
+                capture_output=True, text=True, timeout=600, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return jsonify({"success": False, "error": "git clone timed out"}), 504
+        if proc.returncode != 0:
+            shutil.rmtree(p, ignore_errors=True)  # don't leave a half clone
+            detail = (proc.stderr or "").strip().splitlines()
+            return jsonify({"success": False, "error": f"git clone failed: {detail[-1] if detail else 'unknown error'}"}), 400
+        return register_project(p)
+    if not body.get("path"):
         return jsonify({"success": False, "error": "missing path"}), 400
     p = Path(body["path"]).expanduser()
     try:
@@ -844,14 +908,7 @@ def create_project():
             return jsonify({"success": False, "error": f"cannot create: {exc}"}), 400
         if body.get("gitInit"):
             subprocess.run(["git", "init"], cwd=p, capture_output=True, check=False)
-    projects = load_projects()
-    for existing in projects:
-        if existing["path"] == str(p):
-            return jsonify({"success": False, "error": "already registered"}), 409
-    entry = new_project_entry(p)
-    projects.append(entry)
-    save_projects(projects)
-    return jsonify({"success": True, "project": entry})
+    return register_project(p)
 
 
 @app.route("/api/projects/<pid>/open", methods=["POST"])
@@ -1120,10 +1177,12 @@ def api_file():
 
 @app.route("/api/diff")
 def api_diff():
-    """Unified git diff for one file (worktree vs HEAD).
+    """Full-context git diff for one file (worktree vs HEAD).
 
-    Untracked files are diffed against /dev/null so new content shows as
-    additions. Returns {path, diff, error}; diff == "" means no changes.
+    Uses a huge -U value so the complete file content is included as
+    context — the frontend renders it as an in-file diff view. Untracked
+    files are diffed against /dev/null so new content shows as additions.
+    Returns {path, diff, error}; diff == "" means no changes.
     """
     root = project_root()
     p = safe_path(request.args.get("path", ""))
@@ -1140,12 +1199,12 @@ def api_diff():
     try:
         tracked = run("ls-files", "--error-unmatch", "--", rel).returncode == 0
         if tracked:
-            out = run("diff", "HEAD", "--", rel)
+            out = run("diff", "-U999999", "HEAD", "--", rel)
             if out.returncode not in (0, 1):  # e.g. unborn HEAD (no commits)
-                out = run("diff", "--", rel)
+                out = run("diff", "-U999999", "--", rel)
         else:
             # --no-index exits 1 when the files differ; that's the normal case.
-            out = run("diff", "--no-index", "--", os.devnull, rel)
+            out = run("diff", "-U999999", "--no-index", "--", os.devnull, rel)
         if out.returncode not in (0, 1):
             msg = (out.stderr or "git diff failed").strip()
             return jsonify({"path": rel, "diff": None, "error": msg})
@@ -1217,4 +1276,4 @@ def index():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5000")), threaded=True)
+    app.run(host=BIND_HOST, port=int(os.environ.get("PORT", "5000")), threaded=True)

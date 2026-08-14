@@ -249,6 +249,8 @@
   let npEntries = $state([])
   let npFolder = $state('')
   let npGit = $state(false)
+  let npGitUrl = $state('')
+  let npCloning = $state(false)
 
   // Auto-close the project/session dialogs when unused: closes after
   // DIALOG_IDLE_MS without interaction (any input/focus inside the
@@ -417,8 +419,9 @@
   let viewerHistory = $state([])
   let viewerFuture = $state([])
 
-  // Diff view: when set, the viewer shows the git diff of the selected
-  // file instead of its content. { path, diff } (diff === '' means no
+  // Diff view: when set, the viewer shows an in-file diff of the selected
+  // file (full content with changed lines highlighted; the backend sends
+  // a full-context git diff). { path, diff } (diff === '' means no
   // changes, diff === null means error — message in `error`). Cleared
   // whenever another file is shown.
   let diffView = $state(null)
@@ -433,18 +436,30 @@
     diffView = await apiGet(`/api/diff?path=${encodeURIComponent(path)}`)
   }
 
-  // Render a unified git diff as per-line highlighted HTML (GitHub-style
-  // full-line backgrounds; hunk headers and file metadata dimmed).
+  // Parse a full-context unified diff into the file body: header and
+  // hunk lines are dropped, the leading +/-/space marker is stripped,
+  // leaving { kind, text } per file line ('add' | 'del' | 'ctx').
+  function diffBody(text) {
+    const out = []
+    for (const line of text.split('\n')) {
+      if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@') || /^(diff |index |new file|deleted file|similarity|rename |old mode|new mode|Binary files|\\ No newline)/.test(line)) continue
+      let kind = 'ctx'
+      if (line.startsWith('+')) kind = 'add'
+      else if (line.startsWith('-')) kind = 'del'
+      out.push({ kind, text: line.slice(1) })
+    }
+    // Drop the trailing empty context line from the diff's final newline.
+    if (out.length && out[out.length - 1].kind === 'ctx' && out[out.length - 1].text === '') out.pop()
+    return out
+  }
+
+  // Render the in-file diff: complete file content with GitHub-style
+  // full-line backgrounds on changed lines and a +/- gutter.
   function renderDiff(text) {
-    return text
-      .split('\n')
-      .map((line) => {
-        let cls = 'ctx'
-        if (line.startsWith('+++') || line.startsWith('---') || /^(diff |index |new file|deleted file|similarity|rename |old mode|new mode|Binary files)/.test(line)) cls = 'meta'
-        else if (line.startsWith('@@')) cls = 'hunk'
-        else if (line.startsWith('+')) cls = 'add'
-        else if (line.startsWith('-')) cls = 'del'
-        return `<span class="dline ${cls}">${escapeHtml(line)}\n</span>`
+    return diffBody(text)
+      .map(({ kind, text: t }) => {
+        const marker = kind === 'add' ? '+' : kind === 'del' ? '-' : ' '
+        return `<span class="dline ${kind}"><span class="dgut">${marker}</span>${escapeHtml(t)}\n</span>`
       })
       .join('')
   }
@@ -454,7 +469,7 @@
   // diff is rendered: +/- runs positioned by their line index within
   // the diff text, scaled to the full diff height.
   function marksForDiff(diffText) {
-    const lines = diffText.split('\n')
+    const lines = diffBody(diffText)
     const total = lines.length
     const marks = []
     let start = 0
@@ -464,9 +479,7 @@
       kind = null
     }
     lines.forEach((line, i) => {
-      let k = null
-      if (/^\+(?!\+\+)/.test(line)) k = 'add'
-      else if (/^-(?!--)/.test(line)) k = 'del'
+      const k = line.kind === 'ctx' ? null : line.kind
       if (k !== kind) {
         flush(i)
         if (k) {
@@ -481,10 +494,15 @@
 
   const rulerMarks = $derived(diffView?.diff ? marksForDiff(diffView.diff) : [])
 
+  // A non-empty diff whose body parses to nothing has only metadata
+  // changes (e.g. a file-mode flip) — show a message instead of an
+  // empty pane.
+  const diffMetaOnly = $derived(!!diffView?.diff && diffBody(diffView.diff).length === 0)
+
   // Label for the centered viewer-head status: what the pane shows.
   const viewerType = $derived.by(() => {
     if (!selectedFile) return ''
-    if (diffView) return diffView.diff ? 'diff' : diffView.error ? 'diff · error' : 'diff · no changes'
+    if (diffView) return diffView.error ? 'diff · error' : !diffView.diff ? 'diff · no changes' : diffMetaOnly ? 'diff · metadata only' : 'diff'
     if (selectedFile.image) return 'image'
     if (selectedFile.text === null) return 'binary'
     if (isMarkdown(selectedFile.path)) return plainView ? 'markdown · plain' : 'markdown · rendered'
@@ -1140,6 +1158,29 @@
     await loadProjects()
     if (streaming && !window.confirm('Switch to the new project now? This restarts the agent and kills the running session.')) return
     await switchProject(resp.project.id)
+  }
+
+  // Clone a git repo into the workspace and switch to it. The backend
+  // derives the folder name from the URL; cloning can take a while, so
+  // the dialog buttons are disabled via npCloning meanwhile.
+  async function cloneProject() {
+    const gitUrl = npGitUrl.trim()
+    if (!gitUrl || npCloning) return
+    npCloning = true
+    try {
+      const resp = await apiPost('/api/projects', { gitUrl })
+      if (!resp.success) {
+        entries.push({ role: 'system', text: `⚠️ ${resp.error ?? 'failed to clone repository'}` })
+        return
+      }
+      showNewProject = false
+      npGitUrl = ''
+      await loadProjects()
+      if (streaming && !window.confirm('Switch to the new project now? This restarts the agent and kills the running session.')) return
+      await switchProject(resp.project.id)
+    } finally {
+      npCloning = false
+    }
   }
 
   async function switchToSession(path) {
@@ -1852,6 +1893,18 @@
           <button onclick={() => chooseProjectDir(`${npFullPath()}/${npFolder.trim()}`, npGit)} disabled={!npFolder.trim()}>Create</button>
           <button onclick={() => chooseProjectDir(npFullPath(), false)} disabled={!npPath}>Select</button>
         </div>
+        <div class="np-actions">
+          <input
+            type="text"
+            bind:value={npGitUrl}
+            placeholder="git repo URL (https://… or git@…)"
+            disabled={npCloning}
+            onkeydown={(e) => e.key === 'Enter' && cloneProject()}
+          />
+          <button onclick={cloneProject} disabled={!npGitUrl.trim() || npCloning}>
+            {npCloning ? 'Cloning…' : 'Clone'}
+          </button>
+        </div>
       </div>
     </div>
   {/if}
@@ -2058,7 +2111,7 @@
             {#if viewerType}<span class="ftype">{viewerType}</span>{/if}
           </div>
           <div class="head-right">
-            <button class="dl" class:active={diffView} title="toggle git diff of this file" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>git diff</button>
+            <button class="dl" class:active={diffView} title="toggle in-file diff against git HEAD" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>git diff</button>
             <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
             <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
           </div>
@@ -2079,6 +2132,8 @@
             <div class="filecontent binary">Diff failed: {diffView.error}</div>
           {:else if !diffView.diff}
             <div class="filecontent binary">No changes against git HEAD.</div>
+          {:else if diffMetaOnly}
+            <div class="filecontent binary">No content changes against git HEAD — only file metadata changed (e.g. permissions):<pre>{diffView.diff.trim()}</pre></div>
           {:else}
             <pre class="filecontent diff"><code>{@html renderDiff(diffView.diff)}</code></pre>
           {/if}
