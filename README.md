@@ -93,8 +93,6 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
 | [`doc/brainstorming-about-project-handling.md`](doc/brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (registry/switch/clone/detach increments implemented; process pool still open) |
 | [`doc/theme-preview.md`](doc/theme-preview.md) | Demo document for comparing the themes in the file viewer |
-| [`doc/code-and-security-review.md`](doc/code-and-security-review.md) | Code and security review report (findings since remediated) |
-| [`doc/fable-code-and-security-review.md`](doc/fable-code-and-security-review.md) | Post-fix verification review of the remediations |
 | [`LICENSE`](LICENSE) | License |
 | [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask) |
 | [`web/public/`](web/public/) | Static assets (favicon, logo, icons) copied into `dist/` |
