@@ -69,13 +69,38 @@ def _lan_ip() -> str:
 # proxy, local tools) and LAN access works even if DHCP changes the
 # address. HOST=127.0.0.1 restricts the server to this machine.
 BIND_HOST = os.environ.get("HOST", "0.0.0.0")
-# Reject requests whose Host header is not a local name or the LAN IP:
+
+
+class DynamicTrustedHosts:
+    """Dynamically resolve trusted Host headers on each request.
+
+    Re-evaluates local LAN IPs and hostnames so DHCP IP renewals or
+    multi-homed setups don't cause 400 Bad Request while still rejecting
+    DNS-rebinding attacks from external hostnames.
+    """
+
+    def __iter__(self):
+        hosts = {"127.0.0.1", "localhost", "::1"}
+        if BIND_HOST in ("0.0.0.0", "::"):
+            try:
+                hn = socket.gethostname()
+                hosts.add(hn)
+                hosts.add(f"{hn}.local")
+                for ip in socket.gethostbyname_ex(hn)[2]:
+                    hosts.add(ip)
+            except OSError:
+                pass
+            hosts.add(_lan_ip())
+        elif BIND_HOST not in hosts:
+            hosts.add(BIND_HOST)
+        return iter(hosts)
+
+
+# Reject requests whose Host header is not a local name or a local IP:
 # a remote page could otherwise use DNS rebinding to become same-origin
 # with this app and drive the agent (the CSRF header check doesn't help
 # against that).
-app.config["TRUSTED_HOSTS"] = ["127.0.0.1", "localhost", "::1", _lan_ip()]
-if BIND_HOST not in ("0.0.0.0", "::"):
-    app.config["TRUSTED_HOSTS"].append(BIND_HOST)
+app.config["TRUSTED_HOSTS"] = DynamicTrustedHosts()
 # Cap request bodies (image attachments are base64 in JSON): without a
 # limit, a single request could buffer arbitrary amounts of memory.
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
