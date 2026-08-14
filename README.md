@@ -37,14 +37,17 @@ Features:
 **Limitation (by design):** single-user. One pi subprocess and one shared
 event stream serve all connected browser tabs.
 
-**Security model:** the server listens on all interfaces and has no
+**Security model:** the server listens on all interfaces (`0.0.0.0` by
+default, so both loopback and host/LAN IPs are reachable) and has no
 authentication — it assumes a trusted network. Anyone who can reach the
 port (other local users, but also other machines on the LAN) can drive
 the agent with full tool access. Set `HOST=127.0.0.1` to restrict the
 server to loopback, and do not port-forward or reverse-proxy it without
-adding authentication. Host-header validation (`TRUSTED_HOSTS`: loopback,
-localhost, and the machine's LAN IP) protects against DNS-rebinding
-attacks from remote web pages.
+adding authentication. Host-header validation (`TRUSTED_HOSTS`:
+dynamically evaluated per request against loopback, localhost, machine
+hostnames, mDNS `.local`, and all active interface/route IPs) protects
+against DNS-rebinding attacks from remote web pages while remaining
+resilient across DHCP address changes and multi-homed network setups.
 
 **Workspace containment:** all web endpoints that touch the filesystem
 (project registration, directory picker, file browser, preview, diff,
