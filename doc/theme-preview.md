@@ -2,13 +2,13 @@
 
 A demo document for comparing the light, cream, and dark themes.
 It exercises the elements used across this project's docs — see
-[README.md](README.md) for the real thing.
+[README.md](../README.md) for the real thing.
 
 ## Text and inline markup
 
 Normal paragraph text with **bold**, *italic*, ~~strikethrough~~, and
 `inline code`. A sentence with an [external link](https://github.com/earendil-works/pi)
-and a [file link to app.py](app.py) that opens in the viewer.
+and a [file link to app.py](../app.py) that opens in the viewer.
 
 > A blockquote: muted text with an accent bar on the left.
 > Spanning two lines to show the wrapping.
@@ -123,9 +123,9 @@ LIMIT 5;
 
 ## File links
 
-- [`web/README.md`](web/README.md) — into a subdirectory
-- [`web/src/app.css`](web/src/app.css) — the theme variables themselves
-- [`AGENTS.md`](AGENTS.md) — project conventions
+- [`web/README.md`](../web/README.md) — up into `web/`
+- [`web/src/app.css`](../web/src/app.css) — the theme variables themselves
+- [`AGENTS.md`](../AGENTS.md) — project conventions
 - [`brainstorming-about-project-handling.md`](brainstorming-about-project-handling.md) — design notes
 
 ---

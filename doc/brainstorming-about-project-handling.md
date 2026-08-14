@@ -5,9 +5,11 @@ Status: **first increment implemented** (see §7): project registry
 `POST /api/projects/<id>/open`, a project switcher + new-project dialog
 in the toolbar, and the file browser rooted at the current project.
 Detach, per-project last-file restore, and workspace containment
-(`PI_WEB_WORKSPACE`) landed afterwards.
+(`PI_WEB_WORKSPACE`) landed afterwards; the git-clone flavor (§3.3)
+followed, and detaching the *currently active* project is now allowed
+(the frontend blocks prompts until another project is opened).
 Decisions for the §6 open questions are recorded there.
-Context: the app (see [README.md](README.md)) is currently a chat UI
+Context: the app (see [README.md](../README.md)) is currently a chat UI
 around a single `pi --mode rpc` process bound to one directory. It
 should become a **tool for working on many projects**: create new
 projects, pick one from a list, store project metadata, and bring data
@@ -78,8 +80,8 @@ A "New Project" dialog with three flavors:
    streaming clone output to the UI.
 
 Each flavor could offer scaffolding checkboxes: create
-[AGENTS.md](AGENTS.md) (from a template — big for steering pi per
-project), `.gitignore`, [README.md](README.md).
+[AGENTS.md](../AGENTS.md) (from a template — big for steering pi per
+project), `.gitignore`, [README.md](../README.md).
 
 Backend sketch: `POST /api/projects {name, path|parent, template?}` →
 creates dir, registers, respawns/attaches pi there, responds with the
@@ -123,7 +125,7 @@ per-tab becomes interesting.
    later — `PI_WEB_WORKSPACE`, default the parent of the app dir — and
    all project registration and opening is confined to it.)
 2. Parallel or serial? → **Serial (model A).** All pi I/O goes through
-   a `PiProcess` wrapper class in [app.py](app.py), so a process pool
+   a `PiProcess` wrapper class in [app.py](../app.py), so a process pool
    (model B) can slot in later without reworking the endpoints.
 3. How much metadata? → **Minimal:** `{id, name, path, created}` plus
    `lastOpened` (set on every switch, drives startup restore) and
@@ -159,5 +161,5 @@ manage-projects popup (`POST /api/projects/<id>/detach`); the currently
 active project cannot be detached.
 
 Note: switching projects restarts the pi subprocess — per
-[AGENTS.md](AGENTS.md), that kills the running chat session, so the UI
+[AGENTS.md](../AGENTS.md), that kills the running chat session, so the UI
 should warn before switching while a run is active.

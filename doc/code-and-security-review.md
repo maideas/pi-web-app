@@ -1,6 +1,6 @@
 # Code and Security Review Report
 
-A comprehensive security, architecture, concurrency, and code quality review of the **pi-web-app** repository (Flask backend in [`app.py`](app.py) and Svelte 5 frontend in [`web/src/App.svelte`](web/src/App.svelte)).
+A comprehensive security, architecture, concurrency, and code quality review of the **pi-web-app** repository (Flask backend in [`app.py`](../app.py) and Svelte 5 frontend in [`web/src/App.svelte`](../web/src/App.svelte)).
 
 ---
 
@@ -25,9 +25,9 @@ A comprehensive security, architecture, concurrency, and code quality review of 
 
 ## 1. Executive Summary
 
-The `pi-web-app` project provides a lightweight single-user web UI and bridge around the `pi --mode rpc` coding agent subprocess. As documented in [README.md](README.md), [AGENTS.md](AGENTS.md), and [web/README.md](web/README.md), the backend is a Flask server serving a Svelte 5 frontend, communicating via Server-Sent Events (SSE) and REST endpoints.
+The `pi-web-app` project provides a lightweight single-user web UI and bridge around the `pi --mode rpc` coding agent subprocess. As documented in [README.md](../README.md), [AGENTS.md](../AGENTS.md), and [web/README.md](../web/README.md), the backend is a Flask server serving a Svelte 5 frontend, communicating via Server-Sent Events (SSE) and REST endpoints.
 
-While the codebase is concise and well-organized (~785 lines in [`app.py`](app.py), ~1400 lines in [`web/src/App.svelte`](web/src/App.svelte)), this review identified **critical security risks** (CSRF command execution), **high-severity security and data integrity issues** (XSS via Markdown links, registry corruption), and **UI state desynchronization bugs** during agent execution.
+While the codebase is concise and well-organized (~785 lines in [`app.py`](../app.py), ~1400 lines in [`web/src/App.svelte`](../web/src/App.svelte)), this review identified **critical security risks** (CSRF command execution), **high-severity security and data integrity issues** (XSS via Markdown links, registry corruption), and **UI state desynchronization bugs** during agent execution.
 
 ---
 
@@ -39,14 +39,14 @@ The application architecture consists of three main tiers:
 Browser (Svelte 5)  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode rpc
 ```
 
-1. **Backend ([`app.py`](app.py)):**
+1. **Backend ([`app.py`](../app.py)):**
    - Spawns and manages a `pi --mode rpc` subprocess tied to the active project working directory.
    - Maintains an RPC request-response correlation table using UUIDs.
    - Broadcasts JSONL stdout events to connected browser tabs via SSE (`/events`).
    - Manages a multi-project registry stored in `projects.json` (see design background in [brainstorming-about-project-handling.md](brainstorming-about-project-handling.md)).
    - Serves static files and project file browser/preview API endpoints (`/api/list`, `/api/file`, `/download/<path>`).
 
-2. **Frontend ([`web/src/App.svelte`](web/src/App.svelte)):**
+2. **Frontend ([`web/src/App.svelte`](../web/src/App.svelte)):**
    - Single-page Svelte 5 component utilizing Svelte runes (`$state`, `$effect`).
    - Renders chat turns, thinking blocks, tool execution blocks, attachments, and stats.
    - Embeds a project file tree browser and Markdown file previewer powered by `marked` and `highlight.js`.
@@ -57,13 +57,13 @@ Browser (Svelte 5)  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  
 
 ### 🚨 [CRITICAL] Cross-Origin Command Execution via CSRF / `force=True`
 
-- **Location:** [`app.py`](app.py) (across `prompt`, `set_model`, `create_project`, `open_project`, `compact`, `set_session_name`, etc.)
+- **Location:** [`app.py`](../app.py) (across `prompt`, `set_model`, `create_project`, `open_project`, `compact`, `set_session_name`, etc.)
 - **Severity:** Critical
 - **CWE:** CWE-352 (Cross-Site Request Forgery), CWE-20 (Improper Input Validation)
 
 #### Vulnerability Details
 
-All POST endpoints in [`app.py`](app.py) parse JSON request payloads using `request.get_json(force=True)` or `request.get_json(force=True, silent=True)`.
+All POST endpoints in [`app.py`](../app.py) parse JSON request payloads using `request.get_json(force=True)` or `request.get_json(force=True, silent=True)`.
 
 The `force=True` parameter instructs Flask to ignore the HTTP `Content-Type` header and attempt to parse the request body as JSON regardless of whether it is `application/json`, `text/plain`, or `application/x-www-form-urlencoded`.
 
@@ -83,14 +83,14 @@ Because `Content-Type` is `text/plain`, the browser sends the cross-origin reque
 
 #### Remediation
 
-1. **Remove `force=True`**: Remove `force=True` from all `request.get_json()` calls in [`app.py`](app.py) so Flask enforces strict `Content-Type: application/json` headers.
+1. **Remove `force=True`**: Remove `force=True` from all `request.get_json()` calls in [`app.py`](../app.py) so Flask enforces strict `Content-Type: application/json` headers.
 2. **Add Custom Request Header Validation**: Require a custom header (such as `X-Requested-With: XMLHttpRequest` or `X-Pi-App: 1`) on all API POST requests. Browsers always trigger a CORS preflight for requests containing custom headers, completely neutralizing cross-origin POST attacks.
 
 ---
 
 ### ⚠️ [HIGH] Cross-Site Scripting (XSS) via `javascript:` URIs in Markdown
 
-- **Location:** [`web/src/App.svelte`](web/src/App.svelte) (`onMdClick`, lines 275–285)
+- **Location:** [`web/src/App.svelte`](../web/src/App.svelte) (`onMdClick`, lines 275–285)
 - **Severity:** High
 - **CWE:** CWE-79 (Improper Neutralization of Input During Web Page Generation)
 
@@ -100,7 +100,7 @@ The frontend parses and renders Markdown content in chat messages and in the pro
 
 When `marked` renders Markdown link syntax such as `[click here](javascript:alert(document.domain))`, it produces `<a href="javascript:alert(document.domain)">click here</a>`.
 
-In [`web/src/App.svelte`](web/src/App.svelte), link clicks are intercepted by `onMdClick`:
+In [`web/src/App.svelte`](../web/src/App.svelte), link clicks are intercepted by `onMdClick`:
 
 ```javascript
 function onMdClick(e) {
@@ -138,7 +138,7 @@ if (href.includes(':') && !SAFE_SCHEMES.test(href)) {
 
 ### ℹ️ [LOW] Unrestricted Local Directory Registration
 
-- **Location:** [`app.py`](app.py) (`create_project`, lines 584–620)
+- **Location:** [`app.py`](../app.py) (`create_project`, lines 584–620)
 - **Severity:** Low (Single-user design)
 - **CWE:** CWE-284 (Improper Access Control)
 
@@ -158,7 +158,7 @@ If network access is ever enabled, restrict `create_project` to paths within a u
 
 ### 🐛 [HIGH] Potential `projects.json` Registry Corruption (Non-Atomic Writes)
 
-- **Location:** [`app.py`](app.py) (`save_projects`, line 164)
+- **Location:** [`app.py`](../app.py) (`save_projects`, line 164)
 - **Severity:** High
 - **CWE:** CWE-372 (Incomplete Internal State Elimination)
 
@@ -190,12 +190,12 @@ def save_projects(projects: list[dict]) -> None:
 
 ### 🐛 [MEDIUM] Chat UI Message Sequence Corruption After Tool Calls
 
-- **Location:** [`web/src/App.svelte`](web/src/App.svelte) (`currentAssistant`, lines 363–365)
+- **Location:** [`web/src/App.svelte`](../web/src/App.svelte) (`currentAssistant`, lines 363–365)
 - **Severity:** Medium
 
 #### Vulnerability Details
 
-In [`web/src/App.svelte`](web/src/App.svelte), the helper function `currentAssistant()` locates the target assistant message for streaming updates:
+In [`web/src/App.svelte`](../web/src/App.svelte), the helper function `currentAssistant()` locates the target assistant message for streaming updates:
 
 ```javascript
 function currentAssistant() {
@@ -226,7 +226,7 @@ function currentAssistant() {
 
 ### 🐛 [LOW] Orphaned Subprocesses on Termination Failure
 
-- **Location:** [`app.py`](app.py) (`PiProcess.stop`, lines 121–126)
+- **Location:** [`app.py`](../app.py) (`PiProcess.stop`, lines 121–126)
 - **Severity:** Low
 
 #### Vulnerability Details
@@ -264,7 +264,7 @@ def stop(self) -> None:
 
 ### 🐛 [LOW] Unbounded Queue Growth in SSE Subscriber Streams
 
-- **Location:** [`app.py`](app.py) (`PiProcess.subscribe`, line 105)
+- **Location:** [`app.py`](../app.py) (`PiProcess.subscribe`, line 105)
 - **Severity:** Low
 
 #### Vulnerability Details
@@ -281,7 +281,7 @@ Initialize subscriber queues with a maximum capacity (e.g., `queue.Queue(maxsize
 
 ### ⚡ DOM Allocation Overhead in `escapeHtml`
 
-- **Location:** [`web/src/App.svelte`](web/src/App.svelte) (`escapeHtml`, lines 37–41)
+- **Location:** [`web/src/App.svelte`](../web/src/App.svelte) (`escapeHtml`, lines 37–41)
 - **Severity:** Info / Performance
 
 #### Issue Details
@@ -320,9 +320,9 @@ function escapeHtml(text) {
 
 | Priority | Category | Finding | Affected Location | Recommended Fix |
 | :--- | :--- | :--- | :--- | :--- |
-| **P0** | Security | Cross-Origin CSRF Command Execution | [`app.py`](app.py) | Remove `force=True` from `request.get_json()`; check custom request header (`X-Requested-With`). |
-| **P1** | Security | XSS via `javascript:` URIs in Markdown | [`web/src/App.svelte`](web/src/App.svelte) | Sanitize link targets in `onMdClick` to accept only `http:`, `https:`, `mailto:`. |
-| **P1** | Data Integrity | `projects.json` Registry File Corruption | [`app.py`](app.py) | Implement atomic write using `tmp_path.replace(REGISTRY_PATH)`. |
-| **P2** | UI Bug | Chat Message Misordering After Tool Calls | [`web/src/App.svelte`](web/src/App.svelte) | Update `currentAssistant()` to check `entries[entries.length - 1]?.role === 'assistant'`. |
-| **P2** | Process Lifecycle | Orphaned Subprocesses on Project Switch | [`app.py`](app.py) | Add `wait(timeout=2.0)` and `proc.kill()` fallback in `PiProcess.stop()`. |
-| **P3** | Performance | DOM Allocation Overhead in `escapeHtml` | [`web/src/App.svelte`](web/src/App.svelte) | Replace DOM node creation with regex string replacement. |
+| **P0** | Security | Cross-Origin CSRF Command Execution | [`app.py`](../app.py) | Remove `force=True` from `request.get_json()`; check custom request header (`X-Requested-With`). |
+| **P1** | Security | XSS via `javascript:` URIs in Markdown | [`web/src/App.svelte`](../web/src/App.svelte) | Sanitize link targets in `onMdClick` to accept only `http:`, `https:`, `mailto:`. |
+| **P1** | Data Integrity | `projects.json` Registry File Corruption | [`app.py`](../app.py) | Implement atomic write using `tmp_path.replace(REGISTRY_PATH)`. |
+| **P2** | UI Bug | Chat Message Misordering After Tool Calls | [`web/src/App.svelte`](../web/src/App.svelte) | Update `currentAssistant()` to check `entries[entries.length - 1]?.role === 'assistant'`. |
+| **P2** | Process Lifecycle | Orphaned Subprocesses on Project Switch | [`app.py`](../app.py) | Add `wait(timeout=2.0)` and `proc.kill()` fallback in `PiProcess.stop()`. |
+| **P3** | Performance | DOM Allocation Overhead in `escapeHtml` | [`web/src/App.svelte`](../web/src/App.svelte) | Replace DOM node creation with regex string replacement. |

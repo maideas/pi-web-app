@@ -1,8 +1,8 @@
 # Code and Security Review — Post-Fix Verification
 
 A follow-up review of the **pi-web-app** repository (Flask backend in
-[`app.py`](app.py), Svelte 5 frontend in
-[`web/src/App.svelte`](web/src/App.svelte)), verifying the remediations
+[`app.py`](../app.py), Svelte 5 frontend in
+[`web/src/App.svelte`](../web/src/App.svelte)), verifying the remediations
 from the earlier report
 ([code-and-security-review.md](code-and-security-review.md)) and
 re-auditing the current code for remaining issues.
@@ -44,11 +44,11 @@ and returns 400.
 No critical or high-severity issues remain. The residual items in
 [section 5](#5-remaining-open-items-accepted-risk) are low-severity and
 consistent with the documented single-user, loopback-only threat model
-(see [README.md](README.md) and [AGENTS.md](AGENTS.md)).
+(see [README.md](../README.md) and [AGENTS.md](../AGENTS.md)).
 
-> **Note:** the `images` validation fix touches [`app.py`](app.py) and
+> **Note:** the `images` validation fix touches [`app.py`](../app.py) and
 > only takes effect after a Flask restart (which kills the pi chat
-> session — see [AGENTS.md](AGENTS.md), "Restart semantics").
+> session — see [AGENTS.md](../AGENTS.md), "Restart semantics").
 
 ---
 
@@ -70,7 +70,7 @@ consistent with the documented single-user, loopback-only threat model
 
 ### 🐛 [MEDIUM] Unhandled 500 on Malformed Image Attachments — fixed
 
-- **Location:** [`app.py`](app.py), `prompt()`
+- **Location:** [`app.py`](../app.py), `prompt()`
 - **CWE:** CWE-20 (Improper Input Validation)
 
 `POST /prompt` with `images: [{"foo": 1}]` raised `KeyError: 'data'`
@@ -136,7 +136,7 @@ Checks performed in this review that found **no** issues:
 
 Build/lint verification: `py_compile` ✅, `ruff` (5 pre-existing
 findings, none new) ✅, `npm run build` ✅ (frontend rebuilt so
-[`web/dist/`](web/README.md) matches the sources).
+[`web/dist/`](../web/README.md) matches the sources).
 
 ---
 
@@ -145,7 +145,7 @@ findings, none new) ✅, `npm run build` ✅ (frontend rebuilt so
 | Severity | Item | Notes |
 | :--- | :--- | :--- |
 | Low | **DNS rebinding** bypasses the header-based CSRF defense: a rebound hostname shares the origin and *can* set `X-Requested-With`. | Mitigation would be a `Host` allow-list (`127.0.0.1:5000`, `localhost:5000`) in `csrf_protection` — cheap to add if desired. Requires the victim to keep an attacker page open while it rebinds; low practical risk on a developer box. |
-| Low | **No authentication** — anything running on the same host can drive the agent. | Inherent to the single-user, loopback-bound design documented in [README.md](README.md). Do not bind to non-loopback interfaces without adding auth. |
+| Low | **No authentication** — anything running on the same host can drive the agent. | Inherent to the single-user, loopback-bound design documented in [README.md](../README.md). Do not bind to non-loopback interfaces without adding auth. |
 | Low | **Unrestricted project registration** — `/api/projects` accepts any local path (e.g. `$HOME`). | Design decision for a local tool; becomes a real issue only combined with network exposure (see above). |
 | Info | **Werkzeug dev server** (`app.run`) is not a production server. | Fine for the intended local single-user use. |
 

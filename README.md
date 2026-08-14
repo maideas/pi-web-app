@@ -23,25 +23,28 @@ Features:
   queue a steering message, or abort
 - Image and text-file attachments
 - Model and thinking-level selectors, live token/cost/context stats
-- Multiple projects and sessions: switch projects, restore the last
+- Multiple projects and sessions: switch projects; create, register,
+  or clone (git URL) project directories; restore the last
   session and open file; sessions live in a collapsible sidebar
   (collapse state remembered per project), are auto-named from chat
   content, and can be deleted from a per-session menu
 - Slash commands with autocomplete, mapped to their RPC equivalents
 - Project file browser with markdown (incl. working in-page anchor
-  links), HTML, and image preview, git status badges, a per-file
-  git diff view, download, and delete
+  links), HTML, and image preview, git status badges, an in-file
+  git diff view (full file, changed lines highlighted), download, and delete
 - Light, cream, and dark themes
 
 **Limitation (by design):** single-user. One pi subprocess and one shared
 event stream serve all connected browser tabs.
 
-**Security model:** the server binds to `127.0.0.1` and has no
-authentication — it assumes a trusted single-user host. Anyone who can
-reach the port (including other local users on a shared machine) can
-drive the agent with full tool access. Do not port-forward or reverse-proxy
-it without adding authentication. Host-header validation (`TRUSTED_HOSTS`)
-protects against DNS-rebinding attacks from remote web pages.
+**Security model:** the server listens on all interfaces and has no
+authentication — it assumes a trusted network. Anyone who can reach the
+port (other local users, but also other machines on the LAN) can drive
+the agent with full tool access. Set `HOST=127.0.0.1` to restrict the
+server to loopback, and do not port-forward or reverse-proxy it without
+adding authentication. Host-header validation (`TRUSTED_HOSTS`: loopback,
+localhost, and the machine's LAN IP) protects against DNS-rebinding
+attacks from remote web pages.
 
 **Workspace containment:** all web endpoints that touch the filesystem
 (project registration, directory picker, file browser, preview, diff,
@@ -85,7 +88,7 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/jsconfig.json`](web/jsconfig.json) | JS type-checking config (checkJs) for the frontend |
 | [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, dompurify, highlight.js, github-slugger) |
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
-| [`doc/brainstorming-about-project-handling.md`](doc/brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (first increment implemented) |
+| [`doc/brainstorming-about-project-handling.md`](doc/brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (registry/switch/clone/detach increments implemented; process pool still open) |
 | [`doc/theme-preview.md`](doc/theme-preview.md) | Demo document for comparing the themes in the file viewer |
 | [`doc/code-and-security-review.md`](doc/code-and-security-review.md) | Code and security review report (findings since remediated) |
 | [`doc/fable-code-and-security-review.md`](doc/fable-code-and-security-review.md) | Post-fix verification review of the remediations |
@@ -140,7 +143,7 @@ Projects:
 |---|---|---|
 | `/api/projects` | GET | List registered projects (marks the current one; flags entries outside the workspace) |
 | `/api/dirs?path=` | GET | Directory picker for the new-project dialog: directories only, confined to the workspace root |
-| `/api/projects` | POST | Register an existing directory or create a new one (`path`, optional `gitInit`); the project name is the leaf directory name; the path must lie inside the workspace (403 otherwise) |
+| `/api/projects` | POST | Register an existing directory or create a new one (`path`, optional `gitInit`), or clone a repo into the workspace (`gitUrl`, optional `folder`; the folder defaults to the repo name from the URL); the project name is the leaf directory name; paths must lie inside the workspace (403 otherwise) |
 | `/api/projects/<id>/open` | POST | Switch the active project: respawn pi with the project dir as cwd (403 if the project is outside the workspace) |
 | `/api/projects/<id>/detach` | POST | Remove a project from the registry (directory stays on disk; refuses the current project) |
 | `/api/projects/<id>/last-file` | POST | Remember the project's open viewer file (`lastFile`) |
@@ -151,7 +154,7 @@ File browser and static hosting:
 |---|---|---|
 | `/api/list?path=` | GET | List a directory under the project root |
 | `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB) |
-| `/api/diff?path=` | GET | Unified git diff for one file (worktree vs HEAD; untracked vs /dev/null) |
+| `/api/diff?path=` | GET | Full-context git diff (`-U…`) for one file (worktree vs HEAD; untracked vs /dev/null), rendered by the frontend as an in-file diff with changed lines highlighted |
 | `/api/file/delete` | POST | Delete a file under the project root |
 | `/raw/<path>` | GET | Serve a file inline (image/HTML preview; nosniff + CSP sandbox) |
 | `/download/<path>` | GET | Download a file |
@@ -178,7 +181,8 @@ pip install -r requirements.txt
 # Frontend build
 cd web && npm install && npm run build && cd ..
 
-# Run (serves the UI at http://127.0.0.1:5000; override with PORT=...)
+# Run (serves the UI on port 5000 on all interfaces, i.e. loopback and
+# the LAN; HOST=127.0.0.1 restricts to loopback, PORT=... changes the port)
 # Optional: PI_WEB_WORKSPACE=/path/to/workspace confines projects and
 # the file browser to that directory (default: parent of the app dir).
 python app.py

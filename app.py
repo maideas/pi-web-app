@@ -52,13 +52,9 @@ def contained(p: Path, base: Path = WORKSPACE_ROOT) -> bool:
     return p == base or p.is_relative_to(base)
 
 app = Flask(__name__, static_folder=DIST_DIR, static_url_path="")
-# Reject requests whose Host header is not a local name: a remote page
-# could otherwise use DNS rebinding to become same-origin with this app
-# and drive the agent (the CSRF header check doesn't help against that).
-# Bind address: $HOST if set, otherwise the machine's primary LAN address
-# (falls back to loopback). Determined once at startup so TRUSTED_HOSTS
-# and app.run() agree.
-def _default_host() -> str:
+# The machine's primary LAN address (falls back to loopback). Included
+# in TRUSTED_HOSTS below so LAN clients can address the server by IP.
+def _lan_ip() -> str:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("192.0.2.1", 1))  # no traffic sent; just picks a route
@@ -69,8 +65,17 @@ def _default_host() -> str:
         s.close()
 
 
-BIND_HOST = os.environ.get("HOST") or _default_host()
-app.config["TRUSTED_HOSTS"] = ["127.0.0.1", "localhost", "::1", BIND_HOST]
+# Bind all interfaces by default: loopback stays reachable (Vite dev
+# proxy, local tools) and LAN access works even if DHCP changes the
+# address. HOST=127.0.0.1 restricts the server to this machine.
+BIND_HOST = os.environ.get("HOST", "0.0.0.0")
+# Reject requests whose Host header is not a local name or the LAN IP:
+# a remote page could otherwise use DNS rebinding to become same-origin
+# with this app and drive the agent (the CSRF header check doesn't help
+# against that).
+app.config["TRUSTED_HOSTS"] = ["127.0.0.1", "localhost", "::1", _lan_ip()]
+if BIND_HOST not in ("0.0.0.0", "::"):
+    app.config["TRUSTED_HOSTS"].append(BIND_HOST)
 # Cap request bodies (image attachments are base64 in JSON): without a
 # limit, a single request could buffer arbitrary amounts of memory.
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024

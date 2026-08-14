@@ -5,7 +5,8 @@ to the Flask backend via SSE (`/events`) and REST endpoints to chat with a
 `pi --mode rpc` subprocess: send prompts (with image/text attachments),
 switch models and thinking levels, browse and resume sessions, watch
 token/cost/context stats, browse/preview/download/delete project files,
-and view per-file git diffs.
+and inspect per-file git diffs as an in-file diff view with changed
+lines highlighted.
 
 ## Develop
 

@@ -6,7 +6,8 @@ frontend notes.
 
 ## Running and building
 
-- Backend: `python app.py` (Flask, port 5000 or `$PORT`, serves `web/dist/`).
+- Backend: `python app.py` (Flask, port 5000 or `$PORT`, binds all
+  interfaces — use `HOST=127.0.0.1` for loopback-only — serves `web/dist/`).
   Python deps: `pip install -r requirements.txt`.
 - Frontend: `cd web && npm run build` — **required after every change
   under `web/src/`**: `web/dist/` is gitignored, so Flask only serves
