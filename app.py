@@ -52,8 +52,9 @@ def contained(p: Path, base: Path = WORKSPACE_ROOT) -> bool:
     return p == base or p.is_relative_to(base)
 
 app = Flask(__name__, static_folder=DIST_DIR, static_url_path="")
-# The machine's primary LAN address (falls back to loopback). Included
-# in TRUSTED_HOSTS below so LAN clients can address the server by IP.
+# The machine's primary LAN address (falls back to loopback). Used as
+# the default bind address so the server is reachable by its LAN IP
+# without listening on all interfaces.
 def _lan_ip() -> str:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -65,23 +66,19 @@ def _lan_ip() -> str:
         s.close()
 
 
-# Bind all interfaces by default: loopback stays reachable (Vite dev
-# proxy, local tools) and LAN access works even if DHCP changes the
-# address. HOST=127.0.0.1 restricts the server to this machine.
-BIND_HOST = os.environ.get("HOST", "0.0.0.0")
-
-
 class DynamicTrustedHosts:
     """Dynamically resolve trusted Host headers on each request.
 
     Re-evaluates local LAN IPs and hostnames so DHCP IP renewals or
     multi-homed setups don't cause 400 Bad Request while still rejecting
-    DNS-rebinding attacks from external hostnames.
+    DNS-rebinding attacks from external hostnames. Independent of the
+    bind address: it filters requests that already arrived.
     """
 
     def __iter__(self):
         hosts = {"127.0.0.1", "localhost", "::1"}
-        if BIND_HOST in ("0.0.0.0", "::"):
+        bind_host = os.environ.get("HOST")
+        if bind_host is None or bind_host in ("0.0.0.0", "::"):
             try:
                 hn = socket.gethostname()
                 hosts.add(hn)
@@ -91,8 +88,8 @@ class DynamicTrustedHosts:
             except OSError:
                 pass
             hosts.add(_lan_ip())
-        elif BIND_HOST not in hosts:
-            hosts.add(BIND_HOST)
+        elif bind_host not in hosts:
+            hosts.add(bind_host)
         return iter(hosts)
 
 
@@ -1306,4 +1303,15 @@ def index():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    app.run(host=BIND_HOST, port=int(os.environ.get("PORT", "5000")), threaded=True)
+    port = int(os.environ.get("PORT", "5000"))
+    host = os.environ.get("HOST") or _lan_ip()
+    if host not in ("127.0.0.1", "::1", "0.0.0.0", "::"):
+        # A single bind to the LAN IP would make localhost:5000 stop
+        # working (Vite dev proxy, local tools): serve loopback on a
+        # second, permanent listener. All app state lives in module
+        # globals, so the extra HTTP listener shares everything.
+        from werkzeug.serving import make_server
+
+        loopback = make_server("127.0.0.1", port, app, threaded=True)
+        threading.Thread(target=loopback.serve_forever, daemon=True).start()
+    app.run(host=host, port=port, threaded=True)
