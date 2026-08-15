@@ -153,8 +153,8 @@
       if (ext && hljs.getLanguage(ext)) {
         return hljs.highlight(text, { language: ext }).value
       }
-      if (text.length > 100_000) {
-        return escapeHtml(text.slice(0, 100_000)) + '\n\n…(truncated)'
+      if (text.length > 200_000) {
+        return escapeHtml(text.slice(0, 200_000)) + '\n\n…(truncated)'
       }
       return hljs.highlightAuto(text).value
     } catch {
@@ -454,12 +454,19 @@
   }
 
   // Render the in-file diff: complete file content with GitHub-style
-  // full-line backgrounds on changed lines and a +/- gutter.
+  // full-line backgrounds on changed lines and a +/- gutter. The first
+  // line of each changed run gets an id so the prev/next buttons can
+  // scroll to it.
   function renderDiff(text) {
+    let block = 0
+    let prevKind = 'ctx'
     return diffBody(text)
       .map(({ kind, text: t }) => {
         const marker = kind === 'add' ? '+' : kind === 'del' ? '-' : ' '
-        return `<span class="dline ${kind}"><span class="dgut">${marker}</span>${escapeHtml(t)}\n</span>`
+        let id = ''
+        if (kind !== 'ctx' && prevKind === 'ctx') id = ` id="diffblock-${block++}"`
+        prevKind = kind
+        return `<span class="dline ${kind}"${id}><span class="dgut">${marker}</span>${escapeHtml(t)}\n</span>`
       })
       .join('')
   }
@@ -498,6 +505,87 @@
   // changes (e.g. a file-mode flip) — show a message instead of an
   // empty pane.
   const diffMetaOnly = $derived(!!diffView?.diff && diffBody(diffView.diff).length === 0)
+
+  // Number of diff blocks (contiguous runs of changed lines, +/- mixed)
+  // in the active diff — drives the prev/next navigation buttons. Must
+  // match the diffblock-N ids assigned by renderDiff.
+  function countDiffBlocks(text) {
+    let n = 0
+    let prevKind = 'ctx'
+    for (const { kind } of diffBody(text)) {
+      if (kind !== 'ctx' && prevKind === 'ctx') n++
+      prevKind = kind
+    }
+    return n
+  }
+  const diffBlockCount = $derived(diffView?.diff && !diffMetaOnly ? countDiffBlocks(diffView.diff) : 0)
+
+  // Scroll-position state: true when the viewer is scrolled on/above the
+  // first diff block (diffAtFirst) or on/below the last one (diffAtLast)
+  // — disables the corresponding navigation button.
+  let diffAtFirst = $state(true)
+  let diffAtLast = $state(false)
+  $effect(() => {
+    diffView // reset navigation whenever the diff view changes
+    diffAtFirst = true
+    diffAtLast = false
+    tick().then(updateDiffNav)
+  })
+
+  // Diff navigation is purely position-based: the reference line is the
+  // viewport center, and each block's position is its vertical center.
+  // Returns null when no diff navigation is possible right now.
+  function diffNavState() {
+    if (!diffBlockCount) return null
+    // The scrollable element is the .filecontent pane, not .viewer-body.
+    const scroller = document.querySelector('.viewer-body .filecontent')
+    if (!scroller) return null
+    const base = scroller.getBoundingClientRect().top
+    const pos = scroller.scrollTop + scroller.clientHeight / 2
+    const centers = []
+    for (let i = 0; i < diffBlockCount; i++) {
+      const el = document.getElementById(`diffblock-${i}`)
+      if (!el) return null
+      centers.push(el.getBoundingClientRect().top + el.offsetHeight / 2 - base + scroller.scrollTop)
+    }
+    return { pos, centers }
+  }
+
+  // Sync the button states with the viewer's scroll position. Called on
+  // scroll and after the diff renders.
+  function updateDiffNav() {
+    const s = diffNavState()
+    if (!s) return
+    diffAtFirst = s.centers[0] >= s.pos - 4
+    diffAtLast = s.centers[s.centers.length - 1] <= s.pos + 4
+  }
+
+  // Jump to the first diff block below (dir > 0) or the last block above
+  // (dir < 0) the viewport center.
+  function diffGo(dir) {
+    const s = diffNavState()
+    if (!s) return
+    let target = -1
+    if (dir > 0) {
+      for (let i = 0; i < s.centers.length; i++) {
+        if (s.centers[i] > s.pos + 4) {
+          target = i
+          break
+        }
+      }
+    } else {
+      for (let i = s.centers.length - 1; i >= 0; i--) {
+        if (s.centers[i] < s.pos - 4) {
+          target = i
+          break
+        }
+      }
+    }
+    if (target < 0) return
+    document.getElementById(`diffblock-${target}`)?.scrollIntoView({ block: 'center' })
+    updateDiffNav()
+  }
+
 
   // Label for the centered viewer-head status: what the pane shows.
   const viewerType = $derived.by(() => {
@@ -2250,13 +2338,15 @@
             {#if viewerType}<span class="ftype">{viewerType}</span>{/if}
           </div>
           <div class="head-right">
+            <button class="dl" title="jump to previous diff block" disabled={!diffBlockCount || diffAtFirst} onclick={() => diffGo(-1)}>▲</button>
+            <button class="dl" title="jump to next diff block" disabled={!diffBlockCount || diffAtLast} onclick={() => diffGo(1)}>▼</button>
             <button class="dl" class:active={diffView} title="toggle in-file diff against git HEAD" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>git diff</button>
             <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
             <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
           </div>
         </div>
       {/if}
-      <div class="viewer-body" onscrollcapture={updateFades}>
+      <div class="viewer-body" onscrollcapture={() => { updateFades(); updateDiffNav() }}>
         <div class="fade fade-top" class:visible={fadeTop}></div>
         <div class="fade fade-bottom" class:visible={fadeBottom}></div>
         {#if rulerMarks.length}
