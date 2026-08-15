@@ -1514,6 +1514,35 @@ select {
   min-height: 0;
 }
 
+/* Diff loading overlay: centered spinner on the viewer while a diff
+   is fetched (noticeable on large files). Semi-transparent backdrop
+   dims the content underneath; pointer-events off so the view stays
+   scrollable. */
+.diff-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.diff-spinner {
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 3px solid color-mix(in srgb, var(--fg) 18%, transparent);
+  border-top-color: color-mix(in srgb, var(--fg) 70%, transparent);
+  border-radius: 50%;
+  animation: diff-spin 0.8s linear infinite;
+}
+
+@keyframes diff-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Overview ruler: colored change marks along the right edge of the
    viewer (VS Code / meld style), scaled to the full file height. Sits
    left of the scrollbar; pointer-events off so scrolling stays usable. */

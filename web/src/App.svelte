@@ -425,6 +425,11 @@
   // changes, diff === null means error — message in `error`). Cleared
   // whenever another file is shown.
   let diffView = $state(null)
+  // True while a diff is being fetched/rendered or a file is being
+  // loaded into the viewer — shows a centered spinner overlay on the
+  // viewer (noticeable on large files).
+  let diffLoading = $state(false)
+  let viewerLoading = $state(false)
 
   async function toggleDiff() {
     if (diffView) {
@@ -433,7 +438,15 @@
     }
     const path = selectedFile?.path
     if (!path) return
-    diffView = await apiGet(`/api/diff?path=${encodeURIComponent(path)}`)
+    diffLoading = true
+    try {
+      diffView = await apiGet(`/api/diff?path=${encodeURIComponent(path)}`)
+    } finally {
+      diffLoading = false
+    }
+    // Jump to the first diff block once the diff is rendered.
+    await tick()
+    document.getElementById('diffblock-0')?.scrollIntoView({ block: 'center' })
   }
 
   // Parse a full-context unified diff into the file body: header and
@@ -655,7 +668,13 @@
   // Show a file at `path` and sync the directory browser to its location
   // (the selected entry is highlighted via selectedFile.path).
   async function showFileAt(path) {
-    const f = await loadViewerFile(path)
+    viewerLoading = true
+    let f
+    try {
+      f = await loadViewerFile(path)
+    } finally {
+      viewerLoading = false
+    }
     if (!f.path || f.error) return false
     diffView = null
     selectedFile = f
@@ -854,7 +873,13 @@
       await browse(e.path)
     } else {
       const prev = selectedFile?.path
-      const f = await loadViewerFile(e.path)
+      viewerLoading = true
+      let f
+      try {
+        f = await loadViewerFile(e.path)
+      } finally {
+        viewerLoading = false
+      }
       if (f.path && !f.error) pushViewerHistory(prev, e.path)
       diffView = null
       selectedFile = f
@@ -876,7 +901,13 @@
     browserParent = list.parent ?? null
     dirEntries = list.entries
     if (selectedFile) {
-      const f = await loadViewerFile(selectedFile.path)
+      viewerLoading = true
+      let f
+      try {
+        f = await loadViewerFile(selectedFile.path)
+      } finally {
+        viewerLoading = false
+      }
       if (f.error) {
         selectedFile = null
         diffView = null
@@ -884,7 +915,14 @@
       } else {
         selectedFile = f
         // Keep an open diff view current after agent runs.
-        if (diffView) diffView = await apiGet(`/api/diff?path=${encodeURIComponent(f.path)}`)
+        if (diffView) {
+          diffLoading = true
+          try {
+            diffView = await apiGet(`/api/diff?path=${encodeURIComponent(f.path)}`)
+          } finally {
+            diffLoading = false
+          }
+        }
       }
     }
   }
@@ -2394,6 +2432,9 @@
       <div class="viewer-body" onscrollcapture={() => { updateFades(); updateDiffNav() }}>
         <div class="fade fade-top" class:visible={fadeTop}></div>
         <div class="fade fade-bottom" class:visible={fadeBottom}></div>
+        {#if diffLoading || viewerLoading}
+          <div class="diff-loading"><span class="diff-spinner"></span></div>
+        {/if}
         {#if rulerMarks.length}
           <div class="diffruler">
             {#each rulerMarks as m}
