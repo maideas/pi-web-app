@@ -512,7 +512,15 @@
       const wait = EDIT_SWITCH_MIN_MS - (Date.now() - started)
       if (wait > 0) await new Promise((r) => setTimeout(r, wait))
       editSwitching = false
-      editEl?.focus()
+      if (editEl) {
+        // Focus alone leaves caret/scroll browser-dependent (some put
+        // the caret at the end): start at the top of the file.
+        editEl.focus()
+        editEl.setSelectionRange(0, 0)
+        editEl.scrollTop = 0
+        editEl.scrollLeft = 0
+        syncEditScroll()
+      }
     })()
   }
 
