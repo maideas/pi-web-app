@@ -1276,6 +1276,7 @@
   // restores the unsent draft. Persisted per project in localStorage.
   const HISTORY_MAX = 100
   let promptHistory = []
+  let sessionPrompts = [] // user prompts from the loaded session (loadHistory)
   let histIndex = -1 // -1 = not browsing
   let histDraft = ''
 
@@ -1288,6 +1289,20 @@
     } catch {
       promptHistory = []
     }
+    histIndex = -1
+  }
+
+  // Seed the recall history with the prompts of the loaded session, so
+  // ArrowUp works right after a project/session switch even when this
+  // browser has no localStorage history for the project yet (prompts
+  // sent from another browser, or before history persistence existed).
+  // Session prompts are older, localStorage ones newer; not persisted —
+  // each load re-merges from the session.
+  function mergeSessionPrompts() {
+    const merged = []
+    for (const t of sessionPrompts) if (t && !merged.includes(t)) merged.push(t)
+    for (const t of promptHistory) if (t && !merged.includes(t)) merged.push(t)
+    promptHistory = merged.slice(-HISTORY_MAX)
     histIndex = -1
   }
 
@@ -1452,6 +1467,7 @@
       loadProjects(),
     ])
     loadPromptHistory() // per project; needs currentProjectId from loadProjects
+    mergeSessionPrompts() // seed recall from the resumed session's prompts
     loadSidebarState() // sidebar collapse state is per project too
     // Restore the project's remembered viewer file, README as fallback.
     const remembered = projects.find((p) => p.current)?.lastFile ?? 'README.md'
@@ -1605,6 +1621,8 @@
       currentSessionPath = path
       entries = []
       await loadHistory()
+      loadPromptHistory()
+      mergeSessionPrompts()
       await refreshState()
       await refreshStats()
       inputEl?.focus()
@@ -2104,6 +2122,7 @@
   }
 
   async function loadHistory() {
+    sessionPrompts = []
     const resp = await apiGet('/messages')
     if (!resp.success) return
     for (const m of resp.data.messages) {
@@ -2114,6 +2133,7 @@
           .filter((c) => c.type === 'image')
           .map((c) => `data:${c.mimeType ?? c.source?.mediaType ?? 'image/png'};base64,${c.data ?? c.source?.data}`)
         if (text || images.length) entries.push({ role: 'user', text, images })
+        if (text) sessionPrompts.push(text)
       } else if (m.role === 'assistant') {
         const text = (m.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).join('')
         const thinking = (m.content ?? []).filter((c) => c.type === 'thinking').map((c) => c.thinking).join('')
