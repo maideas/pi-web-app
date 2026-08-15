@@ -2755,8 +2755,8 @@
       {#if selectedFile}
         <div class="viewer-head">
           <div class="head-left">
-            <button class="nav" title="back" disabled={viewerHistory.length === 0} onclick={() => viewerGo(-1)}>&lt;</button>
-            <button class="nav" title="forward" disabled={viewerFuture.length === 0} onclick={() => viewerGo(1)}>&gt;</button>
+            <button class="nav" title="back" disabled={viewerHistory.length === 0} onclick={() => viewerGo(-1)}>&#9664;</button>
+            <button class="nav" title="forward" disabled={viewerFuture.length === 0} onclick={() => viewerGo(1)}>&#9654;</button>
             <button class="dl" title={plainView ? 'show rendered view' : 'show plain source'} disabled={!(isMarkdown(selectedFile.path) || isHtml(selectedFile.path)) || selectedFile.image || selectedFile.text === null} onclick={() => (plainView = !plainView)}>{plainView ? 'rendered' : 'plain'}</button>
             <span class="fname">{selectedFile.path}</span>
           </div>
