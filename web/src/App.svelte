@@ -453,20 +453,65 @@
     return out
   }
 
+  // Highlight an array of lines as one document (so multi-line
+  // constructs like block comments highlight correctly), then split
+  // the result back into per-line HTML. hljs only emits <span> tags;
+  // spans left open at a line break are closed at the end of the line
+  // and reopened on the next, so every returned line is balanced.
+  function highlightLines(lines, path) {
+    const ext = path?.split('.').pop()?.toLowerCase()
+    const known = ext && hljs.getLanguage(ext)
+    const text = lines.join('\n')
+    if (!known && text.length > 200_000) return lines.map(escapeHtml)
+    try {
+      const html = known
+        ? hljs.highlight(text, { language: ext }).value
+        : hljs.highlightAuto(text).value
+      const out = []
+      const open = []
+      for (const raw of html.split('\n')) {
+        let line = open.join('') + raw
+        for (const m of raw.matchAll(/<span[^>]*>|<\/span>/g)) {
+          if (m[0] === '</span>') open.pop()
+          else open.push(m[0])
+        }
+        line += '</span>'.repeat(open.length)
+        out.push(line)
+      }
+      return out
+    } catch {
+      return lines.map(escapeHtml)
+    }
+  }
+
   // Render the in-file diff: complete file content with GitHub-style
   // full-line backgrounds on changed lines and a +/- gutter. The first
   // line of each changed run gets an id so the prev/next buttons can
-  // scroll to it.
-  function renderDiff(text) {
+  // scroll to it. Syntax highlighting is applied to the new and the
+  // old file version separately (ctx+add / ctx+del lines), so deleted
+  // lines are highlighted too.
+  function renderDiff(text, path) {
+    const body = diffBody(text)
+    const newLines = highlightLines(body.filter((l) => l.kind !== 'del').map((l) => l.text), path)
+    const oldLines = highlightLines(body.filter((l) => l.kind !== 'add').map((l) => l.text), path)
+    let ni = 0
+    let oi = 0
     let block = 0
     let prevKind = 'ctx'
-    return diffBody(text)
-      .map(({ kind, text: t }) => {
+    return body
+      .map(({ kind }) => {
         const marker = kind === 'add' ? '+' : kind === 'del' ? '-' : ' '
+        let html
+        if (kind === 'del') html = oldLines[oi++]
+        else if (kind === 'add') html = newLines[ni++]
+        else {
+          html = newLines[ni++]
+          oi++
+        }
         let id = ''
         if (kind !== 'ctx' && prevKind === 'ctx') id = ` id="diffblock-${block++}"`
         prevKind = kind
-        return `<span class="dline ${kind}"${id}><span class="dgut">${marker}</span>${escapeHtml(t)}\n</span>`
+        return `<span class="dline ${kind}"${id}><span class="dgut">${marker}</span>${html}\n</span>`
       })
       .join('')
   }
@@ -2364,7 +2409,7 @@
           {:else if diffMetaOnly}
             <div class="filecontent binary">No content changes against git HEAD — only file metadata changed (e.g. permissions):<pre>{diffView.diff.trim()}</pre></div>
           {:else}
-            <pre class="filecontent diff"><code>{@html renderDiff(diffView.diff)}</code></pre>
+            <pre class="filecontent diff"><code class="hljs">{@html renderDiff(diffView.diff, diffView.path)}</code></pre>
           {/if}
         {:else if selectedFile}
           {#if selectedFile.image}
