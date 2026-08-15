@@ -17,7 +17,7 @@ Features:
 
 - Chat with markdown rendering, syntax highlighting, collapsible
   thinking/tool blocks, and copy buttons for messages and code blocks
-- Shell-style prompt history recall (ArrowUp/ArrowDown, per project)
+- Shell-style prompt history recall (ArrowUp/ArrowDown, per session)
   and a message navigator for jumping to earlier user messages
 - Steerable: the input stays usable while the agent works — send to
   queue a steering message, or abort

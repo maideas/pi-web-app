@@ -1312,14 +1312,16 @@
   // ----- prompt history recall (shell-style) -----
   // ArrowUp with the caret on the first input line recalls previously
   // sent prompts (newest first); ArrowDown moves forward and finally
-  // restores the unsent draft. Persisted per project in localStorage.
+  // restores the unsent draft. Persisted per session in localStorage
+  // (keyed by session path) so prompts from other sessions of the same
+  // project never leak into the recall list.
   const HISTORY_MAX = 100
   let promptHistory = []
   let sessionPrompts = [] // user prompts from the loaded session (loadHistory)
   let histIndex = -1 // -1 = not browsing
   let histDraft = ''
 
-  const historyKey = () => `promptHistory:${currentProjectId || 'default'}`
+  const historyKey = () => `promptHistory:${currentSessionPath || 'no-session'}`
 
   function loadPromptHistory() {
     try {
@@ -1333,7 +1335,7 @@
 
   // Seed the recall history with the prompts of the loaded session, so
   // ArrowUp works right after a project/session switch even when this
-  // browser has no localStorage history for the project yet (prompts
+  // browser has no localStorage history for the session yet (prompts
   // sent from another browser, or before history persistence existed).
   // Session prompts are older, localStorage ones newer; not persisted —
   // each load re-merges from the session.
@@ -1505,7 +1507,7 @@
       loadCommands(),
       loadProjects(),
     ])
-    loadPromptHistory() // per project; needs currentProjectId from loadProjects
+    loadPromptHistory() // per session; needs currentSessionPath from refreshSessions
     mergeSessionPrompts() // seed recall from the resumed session's prompts
     loadSidebarState() // sidebar collapse state is per project too
     // Restore the project's remembered viewer file, README as fallback.
@@ -2155,7 +2157,9 @@
     if (noProject) return
     await apiPost('/new_session')
     entries = []
+    sessionPrompts = [] // no loadHistory here; drop the old session's prompts
     await refreshSessions()
+    loadPromptHistory() // re-key to the fresh session
     await refreshStats()
     inputEl?.focus()
   }
