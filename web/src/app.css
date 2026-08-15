@@ -704,7 +704,7 @@ aside {
 
 .progress-bar {
   position: relative;
-  height: 1px;
+  height: 2px;
   overflow: hidden;
 }
 
@@ -714,9 +714,9 @@ aside {
   top: 0;
   left: 0;
   height: 100%;
-  width: 12%;
+  width: 14%;
   border-radius: 1px;
-  opacity: 0.45;
+  opacity: 0.8;
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
   animation: knight-rider 5s ease-in-out infinite;
 }
