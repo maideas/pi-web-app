@@ -1218,9 +1218,15 @@
     loadSidebarState() // sidebar collapse state is per project too
     // Restore the project's remembered viewer file, README as fallback.
     const remembered = projects.find((p) => p.current)?.lastFile ?? 'README.md'
-    let f = await loadViewerFile(remembered)
-    if ((!f.path || f.error) && remembered !== 'README.md') {
-      f = await loadViewerFile('README.md')
+    viewerLoading = true
+    let f
+    try {
+      f = await loadViewerFile(remembered)
+      if ((!f.path || f.error) && remembered !== 'README.md') {
+        f = await loadViewerFile('README.md')
+      }
+    } finally {
+      viewerLoading = false
     }
     if (f.path && !f.error) {
       selectedFile = f
