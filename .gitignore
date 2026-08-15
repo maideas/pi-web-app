@@ -5,3 +5,4 @@ build/
 __pycache__/
 projects.json
 projects.tmp
+.env

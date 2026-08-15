@@ -28,6 +28,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask import abort as http_abort
 
@@ -36,6 +37,11 @@ DIST_DIR = "web/dist"
 # Auto-naming threshold: combined length of the session's user messages.
 MIN_USER_CHARS = 120
 APP_ROOT = Path(__file__).resolve().parent
+# Machine-local configuration (PI_WEB_TRUSTED_HOSTS, HOST, PORT, ...) from
+# an unmanaged .env next to app.py — gitignored, so each host can set its
+# own names without touching tracked files. Real environment variables
+# win, which keeps one-off overrides on the command line working.
+load_dotenv(APP_ROOT / ".env")
 REGISTRY_PATH = APP_ROOT / "projects.json"
 # Everything the web UI may touch (projects, file browser, downloads)
 # lives below this directory. Defaults to the parent of the app dir;
@@ -72,23 +78,34 @@ class DynamicTrustedHosts:
     Re-evaluates local LAN IPs and hostnames so DHCP IP renewals or
     multi-homed setups don't cause 400 Bad Request while still rejecting
     DNS-rebinding attacks from external hostnames. Independent of the
-    bind address: it filters requests that already arrived.
+    bind address: it filters requests that already arrived, so the local
+    names are trusted regardless of what HOST binds to.
+
+    Names this host cannot discover itself must be listed in
+    PI_WEB_TRUSTED_HOSTS (comma-separated). Typical case: a
+    systemd-nspawn container reached by its machine name via
+    nss-mymachines -- the resolvable name lives on the host, not in the
+    container, so the Host header would otherwise be rejected. A leading
+    dot matches all subdomains (".example.lan").
     """
 
     def __iter__(self):
         hosts = {"127.0.0.1", "localhost", "::1"}
-        bind_host = os.environ.get("HOST")
-        if bind_host is None or bind_host in ("0.0.0.0", "::"):
+        for extra in os.environ.get("PI_WEB_TRUSTED_HOSTS", "").split(","):
+            if extra.strip():
+                hosts.add(extra.strip())
+        for name in (socket.gethostname(), socket.getfqdn()):
+            if not name or name == "localhost":
+                continue
+            hosts.add(name)
+            hosts.add(f"{name.partition('.')[0]}.local")
             try:
-                hn = socket.gethostname()
-                hosts.add(hn)
-                hosts.add(f"{hn}.local")
-                for ip in socket.gethostbyname_ex(hn)[2]:
-                    hosts.add(ip)
+                hosts.update(socket.gethostbyname_ex(name)[2])
             except OSError:
                 pass
-            hosts.add(_lan_ip())
-        elif bind_host not in hosts:
+        hosts.add(_lan_ip())
+        bind_host = os.environ.get("HOST")
+        if bind_host and bind_host not in ("0.0.0.0", "::"):
             hosts.add(bind_host)
         return iter(hosts)
 

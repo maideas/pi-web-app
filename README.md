@@ -48,6 +48,15 @@ dynamically evaluated per request against loopback, localhost, machine
 hostnames, mDNS `.local`, and all active interface/route IPs) protects
 against DNS-rebinding attacks from remote web pages while remaining
 resilient across DHCP address changes and multi-homed network setups.
+Names the server cannot discover itself must be added explicitly via
+`PI_WEB_TRUSTED_HOSTS` (comma-separated; a leading dot matches all
+subdomains), otherwise such requests get a `400 Bad Request`. The
+typical case is a systemd-nspawn container addressed by its machine name
+via `nss-mymachines`: that name is only resolvable on the host, so the
+container has no way to learn it. Such machine-local settings belong in
+an unmanaged `.env` next to [`app.py`](app.py) — gitignored, loaded via
+python-dotenv, real environment variables take precedence; it documents
+the available variables in comments.
 
 **Workspace containment:** all web endpoints that touch the filesystem
 (project registration, directory picker, file browser, preview, diff,
@@ -94,7 +103,7 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`doc/brainstorming-about-project-handling.md`](doc/brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (registry/switch/clone/detach increments implemented; process pool still open) |
 | [`doc/theme-preview.md`](doc/theme-preview.md) | Demo document for comparing the themes in the file viewer |
 | [`LICENSE`](LICENSE) | License |
-| [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask) |
+| [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask, python-dotenv) |
 | [`web/public/`](web/public/) | Static assets (favicon, logo, icons) copied into `dist/` |
 | [`AGENTS.md`](AGENTS.md) | Project conventions for coding agents |
 
@@ -186,6 +195,9 @@ cd web && npm install && npm run build && cd ..
 # the LAN; HOST=127.0.0.1 restricts to loopback, PORT=... changes the port)
 # Optional: PI_WEB_WORKSPACE=/path/to/workspace confines projects and
 # the file browser to that directory (default: parent of the app dir).
+# Optional: PI_WEB_TRUSTED_HOSTS=name1,name2 accepts extra Host headers
+# (e.g. a container name resolved by nss-mymachines on the host).
+# All of these can also live in a local, gitignored .env file.
 python app.py
 ```
 

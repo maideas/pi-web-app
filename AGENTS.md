@@ -56,6 +56,10 @@ frontend notes.
 
 - Commit style: imperative subject line, no prefix conventions
   (see `git log`).
+- `.env` holds machine-local settings (trusted hosts, bind address) and
+  is gitignored — it is the only place documenting them, so add new
+  variables there as commented-out defaults (and mention them in the
+  README).
 - `web/dist/`, `build/`, `.venv/`, `__pycache__/` are gitignored —
   never commit build artifacts.
 
