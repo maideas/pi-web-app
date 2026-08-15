@@ -341,12 +341,22 @@ def load_projects() -> list[dict]:
 
 
 def save_projects(projects: list[dict]) -> None:
-    tmp = REGISTRY_PATH.with_suffix(".tmp")
-    with tmp.open("w") as fh:
-        fh.write(json.dumps(projects, indent=2) + "\n")
-        fh.flush()
-        os.fsync(fh.fileno())  # survive a crash right after the rename
-    tmp.replace(REGISTRY_PATH)
+    # Unique temp name (not a fixed .tmp): concurrent saves must never
+    # write the same temp file. Writers additionally serialize their
+    # load-modify-save cycles via switch_lock.
+    fd, tmp = tempfile.mkstemp(dir=REGISTRY_PATH.parent, prefix=REGISTRY_PATH.name + ".")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(json.dumps(projects, indent=2) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())  # survive a crash right after the rename
+        os.replace(tmp, REGISTRY_PATH)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def new_project_entry(path: Path) -> dict:
@@ -367,8 +377,11 @@ def seed_registry() -> list[dict]:
 
 def project_outside_workspace(entry: dict) -> bool:
     """True if a registry entry escapes WORKSPACE_ROOT (stale or hand-edited)."""
+    path = entry.get("path")
+    if not isinstance(path, str) or not path:
+        return True  # malformed hand-edited entry: treat as untrusted
     try:
-        return not contained(Path(entry["path"]).expanduser().resolve())
+        return not contained(Path(path).expanduser().resolve())
     except OSError:
         return True
 
@@ -412,22 +425,28 @@ def remember_session(path: str | None) -> None:
     Loads the registry fresh: the module-level list and even
     current["project"] can be detached from what's on disk (project
     endpoints load/save their own copies), so saving the in-memory
-    list would drop the change and clobber newer fields.
+    list would drop the change and clobber newer fields. The
+    load-modify-save cycle runs under switch_lock like the project
+    endpoints', so concurrent registry writers can't drop each other's
+    updates (last-writer-wins on the whole file). switch_lock is not
+    reentrant: never call this while holding it (resume_latest_session,
+    which runs under the lock, must not call here).
     """
     project = current["project"]
     if path:
         project["lastSession"] = path
     else:
         project.pop("lastSession", None)
-    registry = load_projects()
-    for entry in registry:
-        if entry["id"] == project["id"]:
-            if path:
-                entry["lastSession"] = path
-            else:
-                entry.pop("lastSession", None)
-            break
-    save_projects(registry)
+    with switch_lock:
+        registry = load_projects()
+        for entry in registry:
+            if entry.get("id") == project["id"]:
+                if path:
+                    entry["lastSession"] = path
+                else:
+                    entry.pop("lastSession", None)
+                break
+        save_projects(registry)
 
 
 def most_recent_project(projects: list[dict]) -> dict:
@@ -640,8 +659,19 @@ def set_thinking():
 # Session display names live in the latest "session_info" entry of the
 # JSONL (appended by pi on set_session_name), so resolving one means
 # scanning the whole file. Cache by (mtime, size) — /sessions is called
-# after every agent run and sessions can be many MB.
+# after every agent run and sessions can be many MB. Bounded: entries
+# not touched by a recent lookup are evicted (see _prune_name_cache),
+# so deleted sessions and switched-away projects don't accumulate.
 _session_name_cache: dict[str, tuple[float, int, str | None]] = {}
+_SESSION_NAME_CACHE_MAX = 200
+
+
+def _prune_name_cache(keep: set[str]) -> None:
+    """Cap the cache: over the limit, drop entries outside `keep`."""
+    if len(_session_name_cache) <= _SESSION_NAME_CACHE_MAX:
+        return
+    for key in [k for k in _session_name_cache if k not in keep]:
+        del _session_name_cache[key]
 
 
 def _session_name(f: Path, mtime: float, size: int) -> str | None:
@@ -653,11 +683,19 @@ def _session_name(f: Path, mtime: float, size: int) -> str | None:
     try:
         with f.open() as fh:
             for line in fh:
+                # Substring test is only a cheap pre-filter: a chat
+                # message containing the literal would match too, so the
+                # parsed entry's type must be checked before its name is
+                # trusted (an attacker-influenced message could otherwise
+                # spoof or reset the display name).
                 if '"type":"session_info"' in line:
                     try:
-                        name = json.loads(line).get("name")
+                        entry = json.loads(line)
                     except json.JSONDecodeError:
                         log.debug("unparseable session_info line in %s", f)
+                        continue
+                    if entry.get("type") == "session_info":
+                        name = entry.get("name")
     except OSError:
         log.debug("cannot read session file %s", f)
     _session_name_cache[key] = (mtime, size, name)
@@ -694,6 +732,7 @@ def sessions():
                 "current": str(f) == current_sf,
             }
         )
+    _prune_name_cache({s["path"] for s in out})
     return jsonify({"sessions": out})
 
 
@@ -740,12 +779,30 @@ def delete_sessions():
 
 @app.route("/switch_session", methods=["POST"])
 def switch_session():
+    """Switch pi to another session file.
+
+    Like /delete_sessions, the path is validated against the current
+    session directory (resolved, must be a *.jsonl directly in that
+    dir) — otherwise the endpoint could point pi at any readable file
+    on disk and leak its content via /messages.
+    """
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or not isinstance(body.get("path"), str):
         return jsonify({"success": False, "error": "missing path"}), 400
-    resp = pi().rpc_request({"type": "switch_session", "sessionPath": body["path"]})
+    state_resp = pi().rpc_request({"type": "get_state"})
+    sf = state_resp.get("data", {}).get("sessionFile") if state_resp.get("success") else None
+    if not sf:
+        return jsonify({"success": False, "error": "no active session"}), 500
+    session_dir = Path(sf).parent.resolve()
+    try:
+        resolved = Path(body["path"]).resolve()
+    except OSError:
+        return jsonify({"success": False, "error": "invalid path"}), 400
+    if resolved.parent != session_dir or resolved.suffix != ".jsonl":
+        return jsonify({"success": False, "error": "not a session file"}), 403
+    resp = pi().rpc_request({"type": "switch_session", "sessionPath": str(resolved)})
     if resp.get("success"):
-        remember_session(body["path"])
+        remember_session(str(resolved))
     return jsonify(resp)
 
 
@@ -784,11 +841,20 @@ def export_html():
 
 @app.route("/ui-response", methods=["POST"])
 def ui_response():
-    """Relay an extension_ui_response from the browser to pi."""
+    """Relay an extension_ui_response from the browser to pi.
+
+    Only the response fields pi's dialog methods define (value,
+    confirmed, cancelled) are forwarded — whitelisting keeps the RPC
+    stdin surface tight instead of relaying arbitrary client JSON.
+    """
     body = request.get_json(silent=True)
-    if not isinstance(body, dict) or body.get("type") != "extension_ui_response" or not body.get("id"):
+    if not isinstance(body, dict) or body.get("type") != "extension_ui_response" or not isinstance(body.get("id"), str):
         return jsonify({"success": False, "error": "invalid body"}), 400
-    pi().send_command(body)
+    cmd = {"type": "extension_ui_response", "id": body["id"]}
+    for key in ("value", "confirmed", "cancelled"):
+        if key in body:
+            cmd[key] = body[key]
+    pi().send_command(cmd)
     return "", 204
 
 
@@ -890,11 +956,15 @@ def _auto_name_locked(force: bool):
     digest = f"User: {user_texts[0][:400]}"
     if len(user_texts) > 1:
         digest += "\n" + "\n".join(f"User: {t[:240]}" for t in user_texts[1:])
+    # The digest (user chat content) is piped via stdin — pi --print
+    # prepends piped stdin to the argv message (with no separator, and
+    # stdin gets trimmed) — so chat text never appears in the process
+    # argv (visible to all local users via /proc/*/cmdline).
     prompt = (
-        "Give this chat session a short, meaningful title (at most 6 words) "
-        "covering all of the user's requests, not just the latest one. "
-        "Reply with the title only: no quotes, no trailing punctuation, no explanation.\n\n"
-        + digest
+        "\n\nGive the chat session above a short, meaningful title (at most "
+        "6 words) covering all of the user's requests, not just the latest "
+        "one. Reply with the title only: no quotes, no trailing punctuation, "
+        "no explanation."
     )
     model = data.get("model") or {}
     # Strip everything irrelevant for a six-word title: the default coding
@@ -920,7 +990,8 @@ def _auto_name_locked(force: bool):
     try:
         # cwd: project-local pi config (model defaults) should apply.
         r = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60, check=False, cwd=project_root()
+            cmd, input=digest, capture_output=True, text=True, timeout=60,
+            check=False, cwd=project_root(),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return jsonify({"success": False, "error": f"naming call failed: {exc}"})
@@ -1404,6 +1475,13 @@ def api_file_save():
     payload = text.encode("utf-8")
     if len(payload) > MAX_PREVIEW_BYTES:
         return jsonify({"success": False, "error": f"too large ({len(payload)} bytes)"}), 400
+    # Capture the permission bits up front: if the file vanishes between
+    # here and the write (agent-side delete), the failure mode is a
+    # conflict the frontend can handle, not a 500 from the chmod.
+    try:
+        mode = stat.S_IMODE(p.stat().st_mode)
+    except OSError:
+        return jsonify({"success": False, "conflict": True})
     if not data.get("force"):
         try:
             disk = p.read_bytes().decode("utf-8")
@@ -1418,7 +1496,7 @@ def api_file_save():
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(payload)
-        os.chmod(tmp, stat.S_IMODE(p.stat().st_mode))
+        os.chmod(tmp, mode)
         os.replace(tmp, p)
     except OSError as e:
         try:
@@ -1470,8 +1548,12 @@ def index():
     # needed for Svelte style attributes and the injected hljs themes.
     resp.headers["Content-Security-Policy"] = (
         "default-src 'self'; img-src 'self' data: http: https:; "
-        "style-src 'self' 'unsafe-inline'; frame-src 'self'; object-src 'none'"
+        "style-src 'self' 'unsafe-inline'; frame-src 'self'; object-src 'none'; "
+        # No page may embed the app (clickjacking): a remote page could
+        # otherwise iframe the LAN URL and overlay-trick clicks into it.
+        "frame-ancestors 'none'"
     )
+    resp.headers["X-Frame-Options"] = "DENY"  # legacy UAs without CSP2
     return resp
 
 

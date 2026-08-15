@@ -45,6 +45,25 @@
     }[m]))
   }
 
+  // Encode a project-relative path for use in a URL path (/raw/...,
+  // /download/...): per segment, so '/' separators survive but '?', '#'
+  // and '%' in file names don't break the URL (encodeURI leaves ?/#
+  // intact and would truncate the path server-side).
+  function encPath(p) {
+    return String(p).split('/').map(encodeURIComponent).join('/')
+  }
+
+  // Markdown hrefs may be percent-encoded by the author (my%20file.png);
+  // decode before re-encoding with encPath or the % would double-encode.
+  // Raw filesystem paths from the API must NOT go through this.
+  function decodeHref(href) {
+    try {
+      return decodeURIComponent(href)
+    } catch {
+      return href // malformed escape: use as-is
+    }
+  }
+
   // Heading ids for in-page anchors are GitHub-compatible slugs; the
   // instance is shared and reset per parse (see renderMarkdown).
   const slugger = new GithubSlugger()
@@ -107,8 +126,8 @@
         })
         return clean.replace(/<img([^>]*?)\ssrc="([^"]*)"/gi, (m, pre, src) => {
           if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('/') || src.startsWith('//')) return m
-          const path = normalizePath(mdImageBase ? `${mdImageBase}/${src}` : src)
-          return `<img${pre} src="/raw/${encodeURI(path)}"`
+          const path = normalizePath(mdImageBase ? `${mdImageBase}/${decodeHref(src)}` : decodeHref(src))
+          return `<img${pre} src="/raw/${encPath(path)}"`
         })
       },
       image(token) {
@@ -121,9 +140,9 @@
           if (!/^(https?|data):/i.test(href)) return escapeHtml(token.text || '')
           return false // safe absolute URL: default rendering
         }
-        const path = normalizePath(mdImageBase ? `${mdImageBase}/${href}` : href)
+        const path = normalizePath(mdImageBase ? `${mdImageBase}/${decodeHref(href)}` : decodeHref(href))
         const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
-        return `<img src="/raw/${encodeURI(path)}" alt="${escapeHtml(token.text || '')}"${title}>`
+        return `<img src="/raw/${encPath(path)}" alt="${escapeHtml(token.text || '')}"${title}>`
       },
       heading(token) {
         // marked emits plain <hN> without ids, so in-page anchors
@@ -1015,7 +1034,9 @@
     e.preventDefault()
     const [pathPart, frag] = href.split('#')
     if (!pathPart) return
-    openLinkedFile(normalizePath(base ? `${base}/${pathPart}` : pathPart), frag)
+    // Author-written hrefs may be percent-encoded (my%20file.md).
+    const decoded = decodeHref(pathPart)
+    openLinkedFile(normalizePath(base ? `${base}/${decoded}` : decoded), frag)
   }
 
   // Scroll to the element carrying `id` within the pane the link lives in
@@ -1875,7 +1896,12 @@
       }
 
       case 'extension_ui_request':
-        handleUiRequest(ev).catch((err) => console.error('UI request error', err))
+        // On any handler error still answer pi (cancelled): it waits
+        // for the correlated response and would hang otherwise.
+        handleUiRequest(ev).catch((err) => {
+          console.error('UI request error', err)
+          if (ev.id) apiPost('/ui-response', { type: 'extension_ui_response', id: ev.id, cancelled: true })
+        })
         break
 
       case 'stream_overflow':
@@ -1917,11 +1943,14 @@
     } else if (req.method === 'confirm') {
       resp.confirmed = window.confirm(`${req.title ?? ''}\n${req.message ?? ''}`)
     } else if (req.method === 'select') {
-      const choice = window.prompt(
-        `${req.title ?? 'Choose:'}\n` + req.options.map((o, i) => `${i + 1}. ${o}`).join('\n')
-      )
+      // Malformed request (options not an array) must not throw: pi
+      // waits for the correlated response and would hang without one.
+      const options = Array.isArray(req.options) ? req.options : []
+      const choice = options.length
+        ? window.prompt(`${req.title ?? 'Choose:'}\n` + options.map((o, i) => `${i + 1}. ${o}`).join('\n'))
+        : null
       const idx = parseInt(choice, 10) - 1
-      if (idx >= 0 && idx < req.options.length) resp.value = req.options[idx]
+      if (idx >= 0 && idx < options.length) resp.value = options[idx]
       else resp.cancelled = true
     } else if (req.method === 'input' || req.method === 'editor') {
       const v = window.prompt(req.title ?? 'Input:', req.prefill ?? '')
@@ -2030,6 +2059,8 @@
 
   // crypto.randomUUID needs a secure context; the app is also served
   // over plain HTTP on LAN IPs, so fall back to a Math.random id.
+  // NOT cryptographically secure — only for correlating bash command
+  // events; never use for tokens, secrets, or anything security-relevant.
   function uuidish() {
     const u = crypto.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
       const r = (Math.random() * 16) | 0
@@ -2741,7 +2772,7 @@
               <button class="dl" title="jump to next diff block" disabled={!diffBlockCount || diffAtLast} onclick={() => diffGo(1)}>▼</button>
               <button class="dl" class:active={diffView} title="toggle in-file diff against git HEAD" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>diff view</button>
               <button class="dl" title="edit file" disabled={selectedFile.image || selectedFile.text === null || !!diffView || editSwitching} onclick={enterEdit}>edit</button>
-              <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
+              <a class="dl" href={`/download/${encPath(selectedFile.path)}`} download>download</a>
               <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
             {/if}
           </div>
@@ -2812,7 +2843,7 @@
         {:else if selectedFile}
           {#if selectedFile.image}
             <div class="filecontent image">
-              <img src={`/raw/${encodeURI(selectedFile.path)}?v=${selectedFile.v}`} alt={selectedFile.path} />
+              <img src={`/raw/${encPath(selectedFile.path)}?v=${selectedFile.v}`} alt={selectedFile.path} />
             </div>
           {:else if selectedFile.text !== null && isMarkdown(selectedFile.path) && !plainView}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -2820,7 +2851,7 @@
             <div class="filecontent md" onclick={(e) => onMdClick(e, selectedFile.path.split('/').slice(0, -1).join('/'))}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'))}</div>
           {:else if selectedFile.text !== null && isHtml(selectedFile.path) && !plainView}
             <div class="filecontent html">
-              <iframe src={`/raw/${encodeURI(selectedFile.path)}?v=${selectedFile.v}`} sandbox="allow-scripts allow-forms" title={selectedFile.path}></iframe>
+              <iframe src={`/raw/${encPath(selectedFile.path)}?v=${selectedFile.v}`} sandbox="allow-scripts allow-forms" title={selectedFile.path}></iframe>
             </div>
           {:else if selectedFile.text !== null}
             <pre class="filecontent hljs"><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>

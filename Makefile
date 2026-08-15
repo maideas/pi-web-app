@@ -1,4 +1,4 @@
-.PHONY: build run dev
+.PHONY: build run dev check audit
 
 # Build the frontend into web/dist/ (required; Flask serves only dist/)
 build:
@@ -11,3 +11,15 @@ run: build
 # Vite dev server with live reload (run `make run`/app.py alongside it)
 dev:
 	npm --prefix web run dev
+
+# Static verification: syntax, lint, frontend build
+check:
+	python3 -m py_compile app.py
+	ruff check app.py
+	npm --prefix web run build
+
+# Dependency vulnerability audit (backend pins + frontend runtime deps).
+# pip-audit needs network access; install it via pip if missing.
+audit:
+	python3 -m pip_audit -r requirements.txt
+	npm --prefix web audit --omit=dev

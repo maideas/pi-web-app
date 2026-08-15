@@ -58,6 +58,9 @@ dynamically evaluated per request against loopback, localhost, machine
 hostnames, mDNS `.local`, and all active interface/route IPs) protects
 against DNS-rebinding attacks from remote web pages while remaining
 resilient across DHCP address changes and multi-homed network setups.
+The app page is served with `Content-Security-Policy: frame-ancestors
+'none'` (plus `X-Frame-Options: DENY`), so other pages cannot embed it
+in an iframe and clickjack the UI.
 Names the server cannot discover itself must be added explicitly via
 `PI_WEB_TRUSTED_HOSTS` (comma-separated; a leading dot matches all
 subdomains), otherwise such requests get a `400 Bad Request`. The
@@ -150,7 +153,7 @@ Sessions and slash commands:
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/sessions` | GET | List recent session files (newest first, max 50) |
-| `/switch_session` | POST | Switch to a session file |
+| `/switch_session` | POST | Switch to a session file (path confined to the session dir) |
 | `/commands` | GET | Slash commands invocable via prompt (pi `get_commands`) |
 | `/compact` | POST | Compact context; optional `customInstructions` |
 | `/set_session_name` | POST | Set session display name |
@@ -238,5 +241,7 @@ Two things to know:
   so newly added templates only appear after a restart or project
   switch.
 
-There is no automated test suite; verification is `python3 -m py_compile
-app.py`, `ruff check app.py`, and `npm run build`.
+There is no automated test suite; verification is `make check`
+(`py_compile` + `ruff` + frontend build). Run `make audit` periodically
+to scan the pinned backend dependencies (pip-audit) and the frontend
+runtime dependencies (npm audit) for known vulnerabilities.
