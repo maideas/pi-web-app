@@ -718,13 +718,12 @@ aside {
   border-radius: 1px;
   opacity: 0.8;
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  animation: knight-rider 5s ease-in-out infinite;
+  animation: knight-rider 2.5s linear infinite;
 }
 
 @keyframes knight-rider {
   0% { left: -15%; }
-  50% { left: 100%; }
-  100% { left: -15%; }
+  100% { left: 110%; }
 }
 
 /* ---------- chat ---------- */
