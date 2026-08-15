@@ -1354,6 +1354,36 @@ def api_file_delete():
     return jsonify({"success": True})
 
 
+@app.route("/api/file/create", methods=["POST"])
+def api_file_create():
+    """Create an empty file or directory (`dir`: true) inside the project.
+
+    Fails if the target already exists (409) so the browser buttons can
+    never clobber existing content. The name must not contain path
+    separators — creation happens directly in the given directory.
+    """
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name", "")).strip()
+    if not name or name in (".", "..") or "/" in name or "\x00" in name:
+        return jsonify({"success": False, "error": "invalid name"}), 400
+    p = safe_path(data.get("path", ""))
+    if not p.is_dir():
+        http_abort(404)
+    target = p / name
+    if not contained(target.resolve(), project_root().resolve()):
+        http_abort(403)
+    try:
+        if data.get("dir"):
+            target.mkdir()
+        else:
+            target.touch(exist_ok=False)
+    except FileExistsError:
+        return jsonify({"success": False, "error": f"{name} already exists"}), 409
+    except OSError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    return jsonify({"success": True, "path": str(target.relative_to(project_root()))})
+
+
 @app.route("/api/file/save", methods=["POST"])
 def api_file_save():
     """Save file content from the viewer's edit mode.

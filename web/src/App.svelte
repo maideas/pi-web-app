@@ -1077,6 +1077,45 @@
     await browse(browserPath)
   }
 
+  // "New file" / "new dir" input mask (modal). Creates the entry in
+  // the directory the browser currently shows (browserPath).
+  let newEntryKind = $state(null) // null | 'file' | 'dir'
+  let newEntryName = $state('')
+  let newEntryError = $state('')
+  let newEntryBusy = $state(false)
+  let newEntryInput = $state(null)
+
+  function openNewEntry(kind) {
+    newEntryKind = kind
+    newEntryName = ''
+    newEntryError = ''
+    tick().then(() => newEntryInput?.focus())
+  }
+
+  async function createNewEntry() {
+    const name = newEntryName.trim()
+    if (!name || newEntryBusy) return
+    if (name.includes('/') || name === '.' || name === '..') {
+      newEntryError = 'Name must not contain / or be . / ..'
+      return
+    }
+    newEntryBusy = true
+    newEntryError = ''
+    const resp = await apiPost('/api/file/create', { path: browserPath, name, dir: newEntryKind === 'dir' })
+    newEntryBusy = false
+    if (!resp.success) {
+      newEntryError = resp.error ?? 'create failed'
+      return
+    }
+    const kind = newEntryKind
+    newEntryKind = null
+    if (kind === 'file') {
+      await showFileAt(resp.path)
+    } else {
+      await browse(browserPath)
+    }
+  }
+
   async function selectEntry(e) {
     if (e.dir) {
       if (!quitEdit()) return
@@ -2650,6 +2689,10 @@
     <div class="browser" style="height: {(browserRatio * 100).toFixed(2)}%">
       <div class="browser-path">
         <span>/{browserPath}</span>
+        <div class="browser-actions">
+          <button title="create a new file here" onclick={() => openNewEntry('file')}>new file</button>
+          <button title="create a new directory here" onclick={() => openNewEntry('dir')}>new dir</button>
+        </div>
       </div>
       <div class="browser-body" onscrollcapture={updateFades}>
         <div class="fade fade-top" class:visible={dirFadeTop}></div>
@@ -2786,6 +2829,34 @@
       </div>
     </div>
    </aside>
+   {#if newEntryKind}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="np-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (newEntryKind = null)}>
+      <div class="np-modal ne-modal" role="dialog" aria-modal="true" aria-label="Create new {newEntryKind}">
+        <div class="np-head">
+          <span class="np-title">New {newEntryKind} in /{browserPath}</span>
+          <button class="np-close" onclick={() => (newEntryKind = null)}>×</button>
+        </div>
+        <div class="np-actions">
+          <input
+            type="text"
+            bind:this={newEntryInput}
+            bind:value={newEntryName}
+            placeholder="{newEntryKind} name"
+            disabled={newEntryBusy}
+            onkeydown={(e) => e.key === 'Enter' && createNewEntry()}
+          />
+          <button onclick={createNewEntry} disabled={!newEntryName.trim() || newEntryBusy}>
+            {newEntryBusy ? 'Creating…' : 'Create'}
+          </button>
+        </div>
+        {#if newEntryError}
+          <div class="ne-error">{newEntryError}</div>
+        {/if}
+      </div>
+    </div>
+   {/if}
    </div>
   </div>
 </main>
