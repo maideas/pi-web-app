@@ -1708,7 +1708,8 @@ select {
   outline-offset: -1px;
 }
 
-:root[data-theme] pre.filecontent {
+:root[data-theme] pre.filecontent,
+:root[data-theme] .editwrap .editunder {
   background: var(--bg);
 }
 
@@ -1816,4 +1817,99 @@ select {
   color: var(--muted2);
   font-family: system-ui, sans-serif;
   white-space: normal;
+}
+
+/* Edit mode: a transparent textarea (caret + selection visible, text
+   invisible) stacked over an hljs-highlighted <pre>. Both layers share
+   identical font metrics and padding; the textarea is the only
+   scroller and its offsets are mirrored onto the underlay
+   (syncEditScroll), so text and highlight stay aligned. */
+.filecontent.editwrap {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.editwrap .editstack {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.editwrap .editunder,
+.editwrap .editarea {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  border: none;
+  padding: 1rem 1.2rem 2.5rem; /* same as .filecontent */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 8;
+  text-align: left;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.editwrap .editunder {
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.editwrap .editunder code {
+  background: transparent;
+  padding: 0;
+}
+
+.editwrap .editarea {
+  overflow: auto;
+  resize: none;
+  outline: none;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--fg);
+}
+
+.editwrap .editarea::selection {
+  background: rgba(90, 140, 255, 0.35);
+}
+
+/* Banner above the editor when the file on disk diverged from the
+   edit base (agent-side edit detected after a run, save conflict, or
+   the file was deleted). */
+.editbanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  padding: 0.5rem 1.2rem;
+  border-bottom: 1px solid var(--warn-border);
+  background: var(--bg);
+  font-family: system-ui, sans-serif;
+  font-size: 0.9rem;
+  white-space: normal;
+}
+
+.editbanner .eb-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.editbanner button {
+  border: 1px solid var(--warn-border);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.editbanner button:hover {
+  background: var(--bg2, rgba(128, 128, 128, 0.12));
 }

@@ -6,7 +6,9 @@ to the Flask backend via SSE (`/events`) and REST endpoints to chat with a
 switch models and thinking levels, browse and resume sessions, watch
 token/cost/context stats, browse/preview/download/delete project files,
 and inspect per-file git diffs as an in-file diff view with changed
-lines highlighted.
+lines highlighted, and edit text files in a syntax-highlighted edit
+mode (transparent textarea over an hljs-rendered underlay) with
+optimistic concurrency against agent-side edits.
 
 ## Develop
 

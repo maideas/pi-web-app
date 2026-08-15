@@ -36,6 +36,11 @@ Features:
 - Project file browser with markdown (incl. working in-page anchor
   links), HTML, and image preview, git status badges, an in-file
   git diff view (full file, changed lines highlighted), download, and delete
+- Text edit mode for the file viewer: syntax-highlighted editor
+  (highlighted underlay + transparent textarea) with Ctrl+S save, Esc
+  quit, and optimistic concurrency against agent-side edits — a save
+  that would clobber changes made on disk is rejected with a conflict,
+  and the editor offers overwrite / reload / keep editing
 - Light, cream, and dark themes
 
 **Limitation (by design):** single-user. One pi subprocess and one shared
@@ -173,11 +178,13 @@ File browser and static hosting:
 | `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB) |
 | `/api/diff?path=` | GET | Full-context git diff (`-U…`) for one file (worktree vs HEAD; untracked vs /dev/null), rendered by the frontend as an in-file diff with changed lines highlighted |
 | `/api/file/delete` | POST | Delete a file under the project root |
+| `/api/file/save` | POST | Save file content from edit mode (atomic write, permission-preserving; rejects with `conflict: true` when the disk content no longer matches the client's `base`, unless `force`) |
 | `/raw/<path>` | GET | Serve a file inline (image/HTML preview; nosniff + CSP sandbox) |
 | `/download/<path>` | GET | Download a file |
 | `/` | GET | Serve the built SPA from `web/dist/` |
 
-Paths for `/api/list`, `/api/file`, `/api/diff`, `/api/file/delete`, `/raw/*`, and `/download/*` are confined to
+Paths for `/api/list`, `/api/file`, `/api/diff`, `/api/file/delete`,
+`/api/file/save`, `/raw/*`, and `/download/*` are confined to
 the current project's root, which itself must lie inside the workspace
 root (traversal attempts get 403; symlinks are resolved before the
 containment check). POST endpoints require an

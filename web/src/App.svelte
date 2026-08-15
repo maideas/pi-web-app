@@ -389,7 +389,7 @@
     }
   }
   function updateFades() {
-    ;({ top: fadeTop, bottom: fadeBottom } = fadesFor('.viewer-body .filecontent'))
+    ;({ top: fadeTop, bottom: fadeBottom } = fadesFor(editMode ? '.viewer-body .editarea' : '.viewer-body .filecontent'))
     ;({ top: dirFadeTop, bottom: dirFadeBottom } = fadesFor('.browser-body .dirlist'))
     ;({ top: chatFadeTop, bottom: chatFadeBottom } = fadesFor('.chat-body .chat'))
     ;({ top: projFadeTop, bottom: projFadeBottom } = fadesFor('.sb-projects .sb-list'))
@@ -430,6 +430,205 @@
   // viewer (noticeable on large files).
   let diffLoading = $state(false)
   let viewerLoading = $state(false)
+
+  // Viewer edit mode: the draft buffer (editText) is separate from
+  // selectedFile.text, so refreshFiles reloading the file after agent
+  // runs can never clobber unsaved edits. editBase is the disk text
+  // the buffer started from — the basis for the dirty check and for
+  // the save endpoint's optimistic concurrency check (pi may edit the
+  // same file via tools; a changed file on disk means a save conflict).
+  let editMode = $state(false)
+  let editPath = $state('')
+  let editText = $state('')
+  let editBase = $state('')
+  // Disk-divergence state: 'changed' (file changed on disk while
+  // editing), 'save' (save rejected: disk != base), 'gone' (file no
+  // longer exists on disk). null = no known divergence.
+  let editConflict = $state(null)
+  let editSaving = $state(false)
+  let editEl = $state(null) // the editor textarea
+  const editDirty = $derived(editMode && editText !== editBase)
+
+  // Highlighted underlay for the editor: a transparent textarea on top
+  // shows caret, selection and (invisible) text; the hljs-colored code
+  // sits underneath with identical font metrics and synced scroll.
+  // Debounced so large files don't re-highlight on every keystroke.
+  let editHtml = $state('')
+  let editHlTimer = null
+  $effect(() => {
+    if (!editMode) return
+    const text = editText
+    const path = editPath
+    clearTimeout(editHlTimer)
+    editHlTimer = setTimeout(() => {
+      editHtml = highlightForEdit(text, path)
+    }, 150)
+  })
+
+  // Like highlight(), but never truncates: the underlay must render
+  // the exact buffer text or it loses alignment with the textarea.
+  function highlightForEdit(text, path) {
+    const ext = path?.split('.').pop()?.toLowerCase()
+    try {
+      if (ext && hljs.getLanguage(ext)) return hljs.highlight(text, { language: ext }).value
+      if (text.length > 200_000) return escapeHtml(text) // alignment over coloring
+      return hljs.highlightAuto(text).value
+    } catch {
+      return escapeHtml(text)
+    }
+  }
+
+  // Underlay content: a trailing newline collapses inside <pre> but
+  // not inside <textarea>, so add one more to keep the layers aligned.
+  const editUnderHtml = $derived(editHtml + (editText.endsWith('\n') ? '\n' : ''))
+
+  // Blur+spinner overlay (the .diff-loading layer) during the
+  // enter/quit transition: entering runs a synchronous hljs pass
+  // (noticeable on large files), and both directions swap the viewer
+  // content, which looks janky unmasked. A minimum display time keeps
+  // tiny files from flickering the overlay.
+  let editSwitching = $state(false)
+  const EDIT_SWITCH_MIN_MS = 250
+  const nextFrame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+  function enterEdit() {
+    if (editMode || editSwitching || !selectedFile || selectedFile.text === null || selectedFile.image) return
+    clearTimeout(editHlTimer)
+    const started = Date.now()
+    editSwitching = true
+    // Async IIFE: quitEdit-style guards need this function to stay
+    // fire-and-forget; the overlay must paint before the sync hljs
+    // pass, so the work happens after a rendered frame.
+    void (async () => {
+      await nextFrame()
+      editMode = true
+      editPath = selectedFile.path
+      editBase = selectedFile.text
+      editText = selectedFile.text
+      editConflict = null
+      editHtml = highlightForEdit(editText, editPath)
+      diffView = null // a diff against HEAD would go stale with every edit
+      await tick() // editor DOM rendered (still under the blur)
+      const wait = EDIT_SWITCH_MIN_MS - (Date.now() - started)
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+      editSwitching = false
+      editEl?.focus()
+    })()
+  }
+
+  // Leave edit mode; returns false when the user cancels at the
+  // discard prompt — callers use this to guard file/project switches.
+  function quitEdit({ force = false } = {}) {
+    if (!editMode) return true
+    if (!force && editDirty && !confirm(`Discard unsaved changes to ${editPath}?`)) return false
+    clearTimeout(editHlTimer)
+    editMode = false
+    editConflict = null
+    // Mask the content swap: overlay for one painted frame plus the
+    // minimum display time. Fire-and-forget — the mode flip is
+    // synchronous so guard callers (if (!quitEdit()) return) work.
+    const started = Date.now()
+    editSwitching = true
+    tick()
+      .then(nextFrame)
+      .then(() => {
+        const wait = EDIT_SWITCH_MIN_MS - (Date.now() - started)
+        setTimeout(() => (editSwitching = false), Math.max(0, wait))
+      })
+    return true
+  }
+
+  async function saveEdit(force = false) {
+    if (!editMode || editSaving) return
+    if (!force && !editDirty) return
+    editSaving = true
+    try {
+      const resp = await apiPost('/api/file/save', { path: editPath, text: editText, base: editBase, force })
+      if (resp.success) {
+        editConflict = null
+        editBase = editText
+        if (selectedFile?.path === editPath) selectedFile = { ...selectedFile, text: editText }
+        await browse(browserPath) // refresh git status marks (likely just became 'M')
+        return
+      }
+      if (resp.conflict) {
+        // Disk diverged from the base (agent-side edit): the banner
+        // offers overwrite / reload / keep editing.
+        editConflict = 'save'
+        return
+      }
+      entries.push({ role: 'system', text: `⚠️ save failed: ${resp.error ?? 'unknown error'}` })
+    } finally {
+      editSaving = false
+    }
+  }
+
+  // Discard the draft and adopt the current disk content.
+  async function reloadEditFromDisk() {
+    viewerLoading = true
+    let f
+    try {
+      f = await loadViewerFile(editPath)
+    } finally {
+      viewerLoading = false
+    }
+    if (f.error || f.text === null) {
+      entries.push({ role: 'system', text: `⚠️ reload failed for ${editPath}` })
+      return
+    }
+    clearTimeout(editHlTimer)
+    editBase = f.text
+    editText = f.text
+    editHtml = highlightForEdit(f.text, editPath)
+    editConflict = null
+    selectedFile = f
+  }
+
+  // A fresh copy of the currently edited file arrived from disk
+  // (agent-run refresh or explicit reload). Unchanged → nothing to do;
+  // clean buffer → silently adopt the new content; dirty buffer →
+  // flag the divergence, the user decides via the banner.
+  function syncEditBase(f) {
+    if (!editMode || f.path !== editPath) return
+    if (f.error || f.text === null) {
+      editConflict = 'gone'
+      return
+    }
+    if (f.text === editBase) {
+      if (editConflict === 'changed' || editConflict === 'gone') editConflict = null
+      return
+    }
+    if (!editDirty) {
+      clearTimeout(editHlTimer)
+      editBase = f.text
+      editText = f.text
+      editHtml = highlightForEdit(f.text, editPath)
+      editConflict = null
+    } else {
+      editConflict = 'changed'
+    }
+  }
+
+  // Mirror the textarea's scroll offsets onto the highlight underlay
+  // (the textarea is the only scrolling layer).
+  function syncEditScroll() {
+    const under = editEl?.parentElement?.querySelector('.editunder')
+    if (!under) return
+    under.scrollTop = editEl.scrollTop
+    under.scrollLeft = editEl.scrollLeft
+  }
+
+  // Ctrl+S saves (cut/copy/paste/undo/redo are native textarea
+  // behavior); Esc quits edit mode like the quit button.
+  function onEditKeydown(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault()
+      saveEdit()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      quitEdit()
+    }
+  }
 
   async function toggleDiff() {
     if (diffView) {
@@ -647,6 +846,7 @@
 
   // Label for the centered viewer-head status: what the pane shows.
   const viewerType = $derived.by(() => {
+    if (editMode) return editDirty ? 'editing · modified' : 'editing'
     if (!selectedFile) return ''
     if (diffView) return diffView.error ? 'diff · error' : !diffView.diff ? 'diff · no changes' : diffMetaOnly ? 'diff · metadata only' : 'diff'
     if (selectedFile.image) return 'image'
@@ -687,6 +887,7 @@
   // (files may vanish between visits), moving the current file to the
   // other stack on success.
   async function viewerGo(dir) {
+    if (!quitEdit()) return
     const [from, to] = dir < 0 ? [viewerHistory, viewerFuture] : [viewerFuture, viewerHistory]
     while (from.length) {
       const path = from.pop()
@@ -751,6 +952,7 @@
   // `frag`: optional #fragment of the link — after the file is rendered,
   // scroll the viewer to that heading (links like [x](other.md#section)).
   async function openLinkedFile(path, frag = '') {
+    if (path !== editPath && !quitEdit()) return
     const prev = selectedFile?.path
     if (await showFileAt(path)) {
       pushViewerHistory(prev, path)
@@ -859,6 +1061,7 @@
       entries.push({ role: 'system', text: `⚠️ delete failed: ${resp.error ?? 'unknown error'}` })
       return
     }
+    quitEdit({ force: true }) // the file is gone, saving is impossible
     viewerHistory = viewerHistory.filter((p) => p !== path)
     viewerFuture = viewerFuture.filter((p) => p !== path)
     selectedFile = null
@@ -868,23 +1071,35 @@
 
   async function selectEntry(e) {
     if (e.dir) {
+      if (!quitEdit()) return
       selectedFile = null
       diffView = null
       await browse(e.path)
-    } else {
-      const prev = selectedFile?.path
-      viewerLoading = true
-      let f
-      try {
-        f = await loadViewerFile(e.path)
-      } finally {
-        viewerLoading = false
-      }
-      if (f.path && !f.error) pushViewerHistory(prev, e.path)
-      diffView = null
-      selectedFile = f
-      rememberFile(e.path)
+      return
     }
+    // Switching to another file requires leaving edit mode first.
+    if (editMode && e.path !== editPath && !quitEdit()) return
+    const prev = selectedFile?.path
+    viewerLoading = true
+    let f
+    try {
+      f = await loadViewerFile(e.path)
+    } finally {
+      viewerLoading = false
+    }
+    // Re-clicking the edited file: stay in edit mode, reconcile the
+    // buffer with the disk content (may flag a conflict banner).
+    if (editMode && e.path === editPath) {
+      if (f.path && !f.error) {
+        selectedFile = f
+        syncEditBase(f)
+      }
+      return
+    }
+    if (f.path && !f.error) pushViewerHistory(prev, e.path)
+    diffView = null
+    selectedFile = f
+    rememberFile(e.path)
   }
 
   // After a run that used tools, files may have changed: reload the current
@@ -909,11 +1124,13 @@
         viewerLoading = false
       }
       if (f.error) {
+        if (editMode) editConflict = 'gone' // draft kept; banner offers discard
         selectedFile = null
         diffView = null
         await browse('')
       } else {
         selectedFile = f
+        syncEditBase(f) // reconcile an open edit buffer with the disk content
         // Keep an open diff view current after agent runs.
         if (diffView) {
           diffLoading = true
@@ -1123,8 +1340,12 @@
         },
         body: JSON.stringify(body ?? {}),
       })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      return await r.json()
+      // Parse the body even on error status: endpoints like
+      // /api/file/save signal specific failures (e.g. save conflicts)
+      // via their JSON payload, not just the status code.
+      const data = await r.json().catch(() => null)
+      if (!r.ok) return { success: false, status: r.status, ...(data ?? { error: `HTTP ${r.status}` }) }
+      return data
     } catch (err) {
       console.error('POST', url, err)
       return { success: false, error: err.message }
@@ -1199,6 +1420,14 @@
   async function reinit() {
     entries = []
     attachments = []
+    if (editMode) {
+      // The project's pi process is already gone; saving the draft is
+      // impossible (paths are confined to the new project root).
+      if (editDirty) {
+        entries.push({ role: 'system', text: `⚠️ unsaved changes to ${editPath} discarded: project switched` })
+      }
+      quitEdit({ force: true })
+    }
     selectedFile = null
     diffView = null
     viewerHistory = []
@@ -1237,6 +1466,7 @@
   }
 
   async function switchProject(id) {
+    if (!quitEdit()) return
     const resp = await apiPost(`/api/projects/${id}/open`)
     if (!resp.success) {
       entries.push({ role: 'system', text: `⚠️ ${resp.error ?? 'failed to open project'}` })
@@ -1272,6 +1502,7 @@
     ]
     sessions = []
     currentSessionPath = ''
+    quitEdit({ force: true }) // no active project, nowhere to save to
     selectedFile = null
     diffView = null
     dirEntries = []
@@ -2427,18 +2658,24 @@
             {#if viewerType}<span class="ftype">{viewerType}</span>{/if}
           </div>
           <div class="head-right">
-            <button class="dl" title="jump to previous diff block" disabled={!diffBlockCount || diffAtFirst} onclick={() => diffGo(-1)}>▲</button>
-            <button class="dl" title="jump to next diff block" disabled={!diffBlockCount || diffAtLast} onclick={() => diffGo(1)}>▼</button>
-            <button class="dl" class:active={diffView} title="toggle in-file diff against git HEAD" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>diff view</button>
-            <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
-            <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
+            {#if editMode}
+              <button class="dl" title="save file (Ctrl+S)" disabled={!editDirty || editSaving} onclick={() => saveEdit()}>save</button>
+              <button class="dl" title="quit edit mode (Esc)" onclick={() => quitEdit()}>quit</button>
+            {:else}
+              <button class="dl" title="jump to previous diff block" disabled={!diffBlockCount || diffAtFirst} onclick={() => diffGo(-1)}>▲</button>
+              <button class="dl" title="jump to next diff block" disabled={!diffBlockCount || diffAtLast} onclick={() => diffGo(1)}>▼</button>
+              <button class="dl" class:active={diffView} title="toggle in-file diff against git HEAD" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>diff view</button>
+              <button class="dl" title="edit file" disabled={selectedFile.image || selectedFile.text === null || !!diffView || editSwitching} onclick={enterEdit}>edit</button>
+              <a class="dl" href={`/download/${selectedFile.path}`} download>download</a>
+              <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
+            {/if}
           </div>
         </div>
       {/if}
       <div class="viewer-body" onscrollcapture={() => { updateFades(); updateDiffNav() }}>
         <div class="fade fade-top" class:visible={fadeTop}></div>
         <div class="fade fade-bottom" class:visible={fadeBottom}></div>
-        {#if diffLoading || viewerLoading}
+        {#if diffLoading || viewerLoading || editSwitching}
           <div class="diff-loading"><span class="diff-spinner"></span></div>
         {/if}
         {#if rulerMarks.length}
@@ -2448,7 +2685,46 @@
             {/each}
           </div>
         {/if}
-        {#if selectedFile && diffView}
+        {#if editMode}
+          <div class="filecontent editwrap">
+            {#if editConflict}
+              <div class="editbanner">
+                <span>
+                  {#if editConflict === 'changed'}
+                    The file changed on disk while you were editing (e.g. an agent-side edit).
+                  {:else if editConflict === 'save'}
+                    Save conflict: the file on disk differs from the version you loaded.
+                  {:else}
+                    The file no longer exists on disk.
+                  {/if}
+                </span>
+                <span class="eb-actions">
+                  {#if editConflict === 'save'}
+                    <button onclick={() => saveEdit(true)}>overwrite disk</button>
+                  {/if}
+                  {#if editConflict === 'gone'}
+                    <button onclick={() => quitEdit({ force: true })}>discard draft</button>
+                  {:else}
+                    <button onclick={reloadEditFromDisk}>reload disk version</button>
+                  {/if}
+                  <button onclick={() => (editConflict = null)}>keep editing</button>
+                </span>
+              </div>
+            {/if}
+            <div class="editstack">
+              <pre class="editunder hljs" aria-hidden="true"><code>{@html editUnderHtml}</code></pre>
+              <textarea
+                class="editarea"
+                bind:this={editEl}
+                bind:value={editText}
+                onscroll={syncEditScroll}
+                onkeydown={onEditKeydown}
+                spellcheck="false"
+                wrap="off"
+              ></textarea>
+            </div>
+          </div>
+        {:else if selectedFile && diffView}
           {#if diffView.error}
             <div class="filecontent binary">Diff failed: {diffView.error}</div>
           {:else if !diffView.diff}

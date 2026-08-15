@@ -22,7 +22,9 @@ import queue
 import re
 import shutil
 import socket
+import stat
 import subprocess
+import tempfile
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -1348,6 +1350,51 @@ def api_file_delete():
     try:
         p.unlink()
     except OSError as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    return jsonify({"success": True})
+
+
+@app.route("/api/file/save", methods=["POST"])
+def api_file_save():
+    """Save file content from the viewer's edit mode.
+
+    Optimistic concurrency against agent-side edits: the client sends
+    the `base` text it loaded before editing; if the file on disk no
+    longer matches (e.g. pi modified it via a tool), the save is
+    rejected with conflict:true and the frontend offers overwrite /
+    reload / keep editing. `force` skips the check.
+    """
+    data = request.get_json(silent=True) or {}
+    p = safe_path(data.get("path", ""))
+    if not p.is_file():
+        http_abort(404)
+    text = data.get("text")
+    if not isinstance(text, str):
+        return jsonify({"success": False, "error": "missing text"}), 400
+    payload = text.encode("utf-8")
+    if len(payload) > MAX_PREVIEW_BYTES:
+        return jsonify({"success": False, "error": f"too large ({len(payload)} bytes)"}), 400
+    if not data.get("force"):
+        try:
+            disk = p.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            disk = None
+        if disk is None or disk != data.get("base"):
+            return jsonify({"success": False, "conflict": True})
+    # Atomic write via temp file + rename, so a concurrently running
+    # agent never reads a half-written file; keep the original
+    # permission bits (os.replace would otherwise apply the umask).
+    fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=p.name + ".")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(payload)
+        os.chmod(tmp, stat.S_IMODE(p.stat().st_mode))
+        os.replace(tmp, p)
+    except OSError as e:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
         return jsonify({"success": False, "error": str(e)}), 500
     return jsonify({"success": True})
 
