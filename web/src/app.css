@@ -1136,6 +1136,36 @@ aside {
   color: var(--link);
 }
 
+/* ---------- shell command entries (`!cmd` / `!!cmd`) ---------- */
+
+.msg.tool.bash code.bash-cmd {
+  margin-left: 0;
+}
+
+.bash-badge {
+  margin-left: 0.5rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: normal;
+  color: var(--sys-fg);
+  white-space: nowrap;
+}
+
+.bash-badge.err {
+  border-color: var(--err);
+  color: var(--err);
+  white-space: normal;
+}
+
+.bash-abort {
+  margin-left: 0.5rem;
+  padding: 0 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 /* ---------- slash command menu ---------- */
 
 .slash-menu {

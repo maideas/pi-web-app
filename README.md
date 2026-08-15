@@ -29,6 +29,10 @@ Features:
   (collapse state remembered per project), are auto-named from chat
   content, and can be deleted from a per-session menu
 - Slash commands with autocomplete, mapped to their RPC equivalents
+- Shell commands: `!cmd` runs a command in the project directory with
+  live-streamed output and adds the result to the model context with
+  the next prompt; `!!cmd` runs it locally only (the model never sees
+  it). Results persist in the session and render after reload
 - Project file browser with markdown (incl. working in-page anchor
   links), HTML, and image preview, git status badges, an in-file
   git diff view (full file, changed lines highlighted), download, and delete
@@ -41,7 +45,8 @@ event stream serve all connected browser tabs.
 default, so both loopback and host/LAN IPs are reachable) and has no
 authentication — it assumes a trusted network. Anyone who can reach the
 port (other local users, but also other machines on the LAN) can drive
-the agent with full tool access. Set `HOST=127.0.0.1` to restrict the
+the agent with full tool access and run arbitrary shell commands
+directly (`/bash` endpoint). Set `HOST=127.0.0.1` to restrict the
 server to loopback, and do not port-forward or reverse-proxy it without
 adding authentication. Host-header validation (`TRUSTED_HOSTS`:
 dynamically evaluated per request against loopback, localhost, machine
@@ -119,6 +124,8 @@ Chat and agent control:
 | `/events` | GET (SSE) | Stream of pi events (15 s keepalive comments) |
 | `/prompt` | POST | Send a prompt; optional `images` and `streamingBehavior` |
 | `/abort` | POST | Abort the current run |
+| `/bash` | POST | Run a shell command in the project cwd; async — returns the command id, streamed output arrives as `bash_execution_update` SSE events, the result as a synthetic `bash_execution_end` event |
+| `/abort_bash` | POST | Abort running `/bash` commands (pi cancels all of them) |
 | `/new_session` | POST | Start a new session |
 | `/messages` | GET | Current session message history |
 | `/state` | GET | Agent state (model, thinking level, session file, ...) |

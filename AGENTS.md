@@ -51,6 +51,16 @@ frontend notes.
 - `/name`, `/rename`, `/new`, `/abort`, `/compact`, `/export` are intercepted by
   the frontend and mapped to RPC calls; other pi TUI commands don't
   exist in RPC mode and are blocked with a hint.
+- `!cmd` / `!!cmd` run shell commands via the RPC `bash` command; `!!`
+  passes `excludeFromContext: true` (documented only in pi's
+  `rpc-mode.js`, not in `rpc.md`), so the output never enters the model
+  context. The `bash` RPC response is a *correlated* response and never
+  reaches SSE, so `POST /bash` is fire-and-forget: `PiProcess.run_bash`
+  rebroadcasts the result as a synthetic `bash_execution_end` event for
+  all tabs, correlated by the client-chosen command id (same id that
+  pi's `bash_execution_update` chunks carry). `bashExecution` history
+  entries emit no `message_start`/`message_end` events — reloads get
+  them from `get_messages`.
 
 ## Git
 

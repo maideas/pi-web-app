@@ -182,6 +182,62 @@ class PiProcess:
             with self.pending_lock:
                 self.pending.pop(cmd_id, None)
 
+    def run_bash(self, command: str, exclude_from_context: bool, cmd_id: str | None = None) -> dict:
+        """Start an RPC `bash` command without holding an HTTP request open.
+
+        Returns immediately with the command id; a waiter thread forwards
+        the correlated pi response to all SSE subscribers as a synthetic
+        `bash_execution_end` event, so every tab (not just the /bash
+        caller) learns the outcome, and arbitrarily long commands don't
+        hit rpc_request's timeout. Streamed output arrives separately as
+        pi's own `bash_execution_update` events, already broadcast by
+        _reader and carrying the same id.
+        """
+        cmd_id = cmd_id or uuid.uuid4().hex
+        q: queue.Queue = queue.Queue()
+        with self.pending_lock:
+            if cmd_id in self.pending:
+                return {"success": False, "error": "duplicate command id"}
+            self.pending[cmd_id] = q
+        try:
+            self.send_command(
+                {
+                    "type": "bash",
+                    "id": cmd_id,
+                    "command": command,
+                    "excludeFromContext": exclude_from_context,
+                }
+            )
+        except RuntimeError as exc:
+            with self.pending_lock:
+                self.pending.pop(cmd_id, None)
+            return {"success": False, "error": str(exc)}
+
+        def waiter() -> None:
+            resp: dict | None = None
+            while resp is None:
+                if not self.is_alive():
+                    resp = {"success": False, "error": "pi process exited"}
+                else:
+                    try:
+                        resp = q.get(timeout=0.5)
+                    except queue.Empty:
+                        pass
+            with self.pending_lock:
+                self.pending.pop(cmd_id, None)
+            self.broadcast(
+                {
+                    "type": "bash_execution_end",
+                    "id": cmd_id,
+                    "command": command,
+                    "excludeFromContext": exclude_from_context,
+                    "response": resp,
+                }
+            )
+
+        threading.Thread(target=waiter, daemon=True).start()
+        return {"success": True, "id": cmd_id}
+
     def subscribe(self) -> queue.Queue:
         q: queue.Queue = queue.Queue(maxsize=1000)
         with self.subscribers_lock:
@@ -498,6 +554,30 @@ def prompt():
 @app.route("/abort", methods=["POST"])
 def abort():
     return jsonify(pi().rpc_request({"type": "abort"}))
+
+
+@app.route("/bash", methods=["POST"])
+def bash():
+    """Run a shell command via pi (`!cmd` / `!!cmd` in the UI).
+
+    Async: the response only carries the command id; the command result
+    is delivered to all tabs as a `bash_execution_end` SSE event (see
+    PiProcess.run_bash). A client-chosen id lets the UI correlate
+    `bash_execution_update` chunks that may arrive before this response.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    command = str(data.get("command") or "").strip()
+    if not command:
+        return jsonify({"success": False, "error": "missing command"})
+    client_id = str(data.get("id") or "").strip()
+    cmd_id = client_id if re.fullmatch(r"[A-Za-z0-9-]{1,64}", client_id) else None
+    return jsonify(pi().run_bash(command, bool(data.get("excludeFromContext")), cmd_id))
+
+
+@app.route("/abort_bash", methods=["POST"])
+def abort_bash():
+    """Abort a running /bash command (pi cancels all running ones)."""
+    return jsonify(pi().rpc_request({"type": "abort_bash"}))
 
 
 @app.route("/new_session", methods=["POST"])

@@ -1351,6 +1351,54 @@
         tick().then(() => inputEl?.focus())
         break
 
+      // Direct RPC bash commands (the `!`/`!!` inputs). Chunk events
+      // carry the command id; unknown ids mean the command was started
+      // in another tab — the authoritative full result arrives with
+      // bash_execution_end, so unknown chunks are simply skipped.
+      case 'bash_execution_update': {
+        const b = entries.findLast((e) => e.role === 'bash' && !e.done && e.id === ev.id)
+        if (b) {
+          b.output += ev.delta ?? ''
+          scrollToBottom()
+        }
+        break
+      }
+
+      case 'bash_execution_end': {
+        let b = entries.findLast((e) => e.role === 'bash' && e.id === ev.id)
+        if (!b) {
+          // Started in another tab: render the finished result here.
+          b = {
+            role: 'bash',
+            id: ev.id,
+            command: ev.command ?? '',
+            output: '',
+            done: false,
+            exclude: !!ev.excludeFromContext,
+            exitCode: null,
+            truncated: false,
+            cancelled: false,
+            error: null,
+            fullOutputPath: null,
+          }
+          entries.push(b)
+        }
+        const resp = ev.response ?? {}
+        if (resp.success) {
+          const d = resp.data ?? {}
+          b.output = d.output ?? ''
+          b.exitCode = d.exitCode ?? null
+          b.cancelled = !!d.cancelled
+          b.truncated = !!d.truncated
+          b.fullOutputPath = d.fullOutputPath ?? null
+        } else {
+          b.error = resp.error ?? 'command failed'
+        }
+        b.done = true
+        scrollToBottom()
+        break
+      }
+
       case 'extension_ui_request':
         handleUiRequest(ev).catch((err) => console.error('UI request error', err))
         break
@@ -1505,6 +1553,58 @@
     }
   }
 
+  // crypto.randomUUID needs a secure context; the app is also served
+  // over plain HTTP on LAN IPs, so fall back to a Math.random id.
+  function uuidish() {
+    const u = crypto.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+    })
+    return u.replaceAll('-', '')
+  }
+
+  // Shell commands: `!cmd` runs via pi's RPC bash with the output added
+  // to the model context on the next prompt; `!!cmd` sets
+  // excludeFromContext (output stays local). The entry is created here
+  // and streams/finalizes via the bash_execution_update / synthetic
+  // bash_execution_end SSE events, correlated by the client-chosen id
+  // (update chunks can arrive before the POST response returns the id).
+  async function runShellCommand(raw) {
+    const exclude = raw.startsWith('!!')
+    const command = raw.slice(exclude ? 2 : 1).trim()
+    if (!command) {
+      entries.push({ role: 'system', text: '⚠️ usage: !<command> (result goes to the model) or !!<command> (local only)' })
+      return
+    }
+    const entry = {
+      role: 'bash',
+      id: uuidish(),
+      command,
+      output: '',
+      done: false,
+      exclude,
+      exitCode: null,
+      truncated: false,
+      cancelled: false,
+      error: null,
+      fullOutputPath: null,
+    }
+    entries.push(entry)
+    const r = await apiPost('/bash', { id: entry.id, command, excludeFromContext: exclude })
+    if (!r.success) {
+      entry.done = true
+      entry.error = r.error ?? 'failed to run command'
+      scrollToBottom()
+    } else if (r.id && r.id !== entry.id) {
+      entry.id = r.id
+    }
+  }
+
+  // pi cancels all running RPC bash commands at once.
+  async function abortBash() {
+    await apiPost('/abort_bash')
+  }
+
   async function sendPrompt() {
     if (noProject) {
       entries.push({ role: 'system', text: '⚠️ no project selected — pick one on the left or create a new one first' })
@@ -1512,6 +1612,12 @@
     }
     const trimmed = input.trim()
     if (trimmed) pushPromptHistory(trimmed)
+    if (trimmed.startsWith('!')) {
+      input = ''
+      await runShellCommand(trimmed)
+      scrollToBottom(true) // explicit command: jump to the end
+      return
+    }
     if (trimmed.startsWith('/')) {
       input = ''
       await handleSlashCommand(trimmed)
@@ -1604,6 +1710,20 @@
           output: (m.content ?? []).map((c) => c.text ?? '').join(''),
           done: true,
           isError: !!m.isError,
+        })
+      } else if (m.role === 'bashExecution') {
+        entries.push({
+          role: 'bash',
+          id: null,
+          command: m.command ?? '',
+          output: m.output ?? '',
+          done: true,
+          exclude: !!m.excludeFromContext,
+          exitCode: m.exitCode ?? null,
+          truncated: !!m.truncated,
+          cancelled: !!m.cancelled,
+          error: null,
+          fullOutputPath: m.fullOutputPath ?? null,
         })
       }
     }
@@ -1977,6 +2097,25 @@
             </div>
           </div>
         {/if}
+      {:else if entry.role === 'bash'}
+        <details class="msg tool bash" class:error={entry.done && !entry.cancelled && (entry.error || entry.exitCode !== 0)} class:ok={entry.done && !entry.error && entry.exitCode === 0} open>
+          <summary>
+            <code class="bash-cmd">{entry.exclude ? '!!' : '!'}{entry.command}</code>
+            <span class="bash-badge" title={entry.exclude ? 'output stays local; the model never sees it' : 'output is added to the model context with the next prompt'}>{entry.exclude ? 'local' : 'in context'}</span>
+            {#if !entry.done}
+              <span class="spinner">…</span>
+              <button class="bash-abort" onclick={(e) => { e.preventDefault(); e.stopPropagation(); abortBash() }}>abort</button>
+            {:else if entry.error}
+              <span class="bash-badge err">⚠ {entry.error}</span>
+            {:else}
+              <span class="bash-badge">{entry.cancelled ? 'aborted' : `exit ${entry.exitCode}`}</span>
+              {#if entry.truncated}
+                <span class="bash-badge" title={entry.fullOutputPath ? `full output: ${entry.fullOutputPath}` : ''}>truncated</span>
+              {/if}
+            {/if}
+          </summary>
+          {#if entry.output}<pre>{entry.output}</pre>{/if}
+        </details>
       {:else}
         <details class="msg tool" class:error={entry.isError} class:ok={entry.done && !entry.isError} open>
           <summary>
