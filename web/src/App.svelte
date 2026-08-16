@@ -213,7 +213,7 @@
   let sessionMenuFor = $state(null) // session path whose ⋯ menu is open
   let projectMenuFor = $state(null) // project id whose ⋯ menu is open
 
-  // Mobile layout (< 500px): one full-screen pane at a time, switched
+  // Mobile layout (<= 1024px): one full-screen pane at a time, switched
   // via a slide-in menu opened from a floating hamburger button. All
   // panes stay mounted (hidden via CSS on .body) to preserve scroll
   // positions, the editor draft and stream state.
@@ -2295,7 +2295,7 @@
     reinit() // also shows the project README in the file viewer, if present
     reconnectEvents()
     inputEl?.focus()
-    const mq = window.matchMedia('(max-width: 499px)')
+    const mq = window.matchMedia('(max-width: 1024px)')
     isMobile = mq.matches
     const onMq = (e) => { isMobile = e.matches }
     mq.addEventListener('change', onMq)

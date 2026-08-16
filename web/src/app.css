@@ -1944,14 +1944,14 @@ select {
   background: var(--bg2, rgba(128, 128, 128, 0.12));
 }
 
-/* ---------- mobile layout (< 500px) ---------- */
+/* ---------- mobile layout (<= 1024px) ---------- */
 
 /* Messages view pane: only ever visible on mobile (via .mv-messages) */
 .msgview {
   display: none;
 }
 
-@media (max-width: 499px) {
+@media (max-width: 1024px) {
   main {
     padding: 6px;
   }
