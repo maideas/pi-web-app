@@ -226,7 +226,7 @@
     ['messages', 'Messages'],
     ['chat', 'Chat'],
     ['browse', 'Browse'],
-    ['files', 'Files'],
+    // No 'files' entry: the viewer is reached by tapping a file in Browse.
   ]
   function setMobileView(v) {
     mobileView = v
