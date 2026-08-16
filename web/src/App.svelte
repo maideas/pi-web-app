@@ -871,18 +871,6 @@
   }
 
 
-  // Label for the centered viewer-head status: what the pane shows.
-  const viewerType = $derived.by(() => {
-    if (editMode) return editDirty ? 'editing · modified' : 'editing'
-    if (!selectedFile) return ''
-    if (diffView) return diffView.error ? 'diff · error' : !diffView.diff ? 'diff · no changes' : diffMetaOnly ? 'diff · metadata only' : 'diff'
-    if (selectedFile.image) return 'image'
-    if (selectedFile.text === null) return 'binary'
-    if (isMarkdown(selectedFile.path)) return plainView ? 'markdown · plain' : 'markdown · rendered'
-    if (isHtml(selectedFile.path)) return plainView ? 'html · plain' : 'html · rendered'
-    return 'source'
-  })
-
   // Toggle between rendered and plain (source) view for markdown/HTML.
   let plainView = $state(false)
   function pushViewerHistory(prevPath, newPath) {
@@ -2760,9 +2748,6 @@
             <button class="nav" title="forward" disabled={viewerFuture.length === 0} onclick={() => viewerGo(1)}>&#9654;</button>
             <button class="dl" title={plainView ? 'show rendered view' : 'show plain source'} disabled={!(isMarkdown(selectedFile.path) || isHtml(selectedFile.path)) || selectedFile.image || selectedFile.text === null} onclick={() => (plainView = !plainView)}>{plainView ? 'rendered' : 'plain'}</button>
             <span class="fname">{selectedFile.path}</span>
-          </div>
-          <div class="head-mid">
-            {#if viewerType}<span class="ftype">{viewerType}</span>{/if}
           </div>
           <div class="head-right">
             {#if editMode}

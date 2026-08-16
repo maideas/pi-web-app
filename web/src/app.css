@@ -1638,6 +1638,8 @@ select {
 
 .viewer-head {
   display: flex;
+  flex-wrap: wrap; /* the action buttons wrap under the nav + path
+                     group when the window gets too narrow */
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.6rem; /* same vertical padding as the chat toolbar */
@@ -1645,25 +1647,31 @@ select {
   font-size: 1rem;
 }
 
-/* Three equal sections: nav + path (left), content type (center),
-   action buttons (right). flex-basis 0 makes the thirds truly equal
-   regardless of content width; min-width lets the fname ellipsize. */
+/* Two boxes: nav + path (left) and action buttons (right). The left
+   box takes the remaining space (min-width 0 lets the fname ellipsize);
+   the right box hugs its buttons and wraps below the left box when
+   they no longer fit side by side. */
 .viewer-head .head-left,
-.viewer-head .head-mid,
 .viewer-head .head-right {
-  flex: 1 1 0;
-  min-width: 0;
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.viewer-head .head-mid {
-  justify-content: center;
+.viewer-head .head-left {
+  /* basis auto (content width), not 0: with a 0 basis this box would
+     shrink to nothing, the line would never overflow, and the fixed-
+     width buttons inside would spill over the right box instead of
+     wrapping. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden; /* clip instead of bleeding into the right box if
+                       the window gets narrower than the nav buttons */
 }
 
 .viewer-head .head-right {
   justify-content: flex-end;
+  flex: 0 0 auto;
 }
 
 .viewer-head .nav {
@@ -1672,7 +1680,7 @@ select {
   color: var(--accent-fg);
   border: none;
   border-radius: 8px;
-  padding: 0.4rem 0.6rem; /* same padding as the toolbar buttons */
+  padding: 0.4rem 0.77rem;
   font-size: 0.8rem;
   font-family: Arial, sans-serif;
   cursor: pointer;
@@ -1694,17 +1702,6 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-}
-
-/* Centered content-type status (file / diff / rendered / image / binary). */
-.viewer-head .ftype {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted2);
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 .viewer-head .dl {
