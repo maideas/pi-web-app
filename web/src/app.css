@@ -2004,20 +2004,20 @@ select {
 
   /* View switching: .body carries mv-<view>; only the matching pane(s)
      stay visible. projects/sessions share the sidebar (one section
-     each), browse/files share the right aside (browser/viewer). */
+     each), files/viewer share the right aside (browser/viewer). */
   .body.mv-projects .workspace,
   .body.mv-sessions .workspace,
   .body.mv-chat .sidebar,
   .body.mv-chat .workspace aside,
   .body.mv-chat .msgview,
-  .body.mv-browse .sidebar,
-  .body.mv-browse .chatcol,
-  .body.mv-browse .viewer,
-  .body.mv-browse .msgview,
   .body.mv-files .sidebar,
   .body.mv-files .chatcol,
-  .body.mv-files .browser,
+  .body.mv-files .viewer,
   .body.mv-files .msgview,
+  .body.mv-viewer .sidebar,
+  .body.mv-viewer .chatcol,
+  .body.mv-viewer .browser,
+  .body.mv-viewer .msgview,
   .body.mv-messages .sidebar,
   .body.mv-messages .chatcol,
   .body.mv-messages .workspace aside,

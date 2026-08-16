@@ -225,8 +225,8 @@
     ['sessions', 'Sessions'],
     ['messages', 'Messages'],
     ['chat', 'Chat'],
-    ['browse', 'Browse'],
-    // No 'files' entry: the viewer is reached by tapping a file in Browse.
+    ['files', 'Files'],
+    // No 'viewer' entry: the viewer is reached by tapping a file in Files.
   ]
   function setMobileView(v) {
     mobileView = v
@@ -1177,7 +1177,7 @@
     diffView = null
     selectedFile = f
     rememberFile(e.path)
-    if (isMobile) mobileView = 'files'
+    if (isMobile) mobileView = 'viewer'
   }
 
   // After a run that used tools, files may have changed: reload the current
