@@ -2691,7 +2691,7 @@
    </button>
 
    {#if showMsgNav}
-    <div class="msgnav-popup" role="dialog" aria-label="Your messages" tabindex="-1" onmouseenter={openMsgNav} onmouseleave={closeMsgNav}>
+    <div class="msgnav-popup" role="dialog" aria-label="Messages" tabindex="-1" onmouseenter={openMsgNav} onmouseleave={closeMsgNav}>
       {#each userMessages as { e, i } (i)}
         <button class="msgnav-item" onclick={() => jumpToMessage(i)}>{truncate(e.text)}</button>
       {:else}
@@ -2875,7 +2875,7 @@
         messages; picking one switches to the chat and scrolls there.
         Hidden on desktop (the gap-dots popup serves this there). -->
    <div class="msgview">
-     <div class="msgview-head">Your messages</div>
+     <div class="msgview-head">Messages</div>
      <div class="msgview-list">
        {#each userMessages as { e, i } (i)}
          <button class="msgnav-item" onclick={() => mobileJumpToMessage(i)}>{truncate(e.text)}</button>
