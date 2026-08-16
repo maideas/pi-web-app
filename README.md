@@ -41,6 +41,12 @@ Features:
   quit, and optimistic concurrency against agent-side edits — a save
   that would clobber changes made on disk is rejected with a conflict,
   and the editor offers overwrite / reload / keep editing
+- Mobile layout (screens < 500px wide): one full-screen pane at a
+  time, switched via a slide-in menu (opened from a floating
+  hamburger button) with Projects, Sessions, Messages, Chat, Browse
+  and Files views; the menu also hosts the model and thinking-level
+  selectors. Selecting a session or file jumps to the chat / file
+  viewer automatically
 - Light, cream, and dark themes
 
 **Limitation (by design):** single-user. One pi subprocess and one shared

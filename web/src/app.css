@@ -1943,3 +1943,321 @@ select {
 .editbanner button:hover {
   background: var(--bg2, rgba(128, 128, 128, 0.12));
 }
+
+/* ---------- mobile layout (< 500px) ---------- */
+
+/* Messages view pane: only ever visible on mobile (via .mv-messages) */
+.msgview {
+  display: none;
+}
+
+@media (max-width: 499px) {
+  main {
+    padding: 6px;
+  }
+
+  /* Desktop-only affordances: splitters, gap-dots navigator, the chat
+     toolbar (model/thinking move into the slide-in menu), the collapsed
+     sidebar rail and the sidebar's own top row */
+  .vsplitter,
+  .gap-dots,
+  .msgnav-popup,
+  .toolbar,
+  .sidebar-rail,
+  .sidebar-top,
+  .sb-splitter {
+    display: none !important;
+  }
+
+  /* All panes full width; the inline flex-basis / width / height set by
+     the draggable splitters must be overridden */
+  .sidebar {
+    width: auto !important;
+    flex: 1;
+  }
+  .workspace {
+    flex: 1;
+  }
+  .chatcol {
+    flex: 1 !important;
+    margin-right: 0;
+  }
+  .workspace aside {
+    flex: 1 !important;
+  }
+  .browser {
+    height: auto !important;
+    flex: 1;
+  }
+  .viewer {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* The browser/viewer splitter is a sibling of .browser, not a
+     child — hide it so it doesn't show as a stray line in the
+     full-screen Browse/Files views */
+  .workspace aside .splitter {
+    display: none !important;
+  }
+
+  /* View switching: .body carries mv-<view>; only the matching pane(s)
+     stay visible. projects/sessions share the sidebar (one section
+     each), browse/files share the right aside (browser/viewer). */
+  .body.mv-projects .workspace,
+  .body.mv-sessions .workspace,
+  .body.mv-chat .sidebar,
+  .body.mv-chat .workspace aside,
+  .body.mv-chat .msgview,
+  .body.mv-browse .sidebar,
+  .body.mv-browse .chatcol,
+  .body.mv-browse .viewer,
+  .body.mv-browse .msgview,
+  .body.mv-files .sidebar,
+  .body.mv-files .chatcol,
+  .body.mv-files .browser,
+  .body.mv-files .msgview,
+  .body.mv-messages .sidebar,
+  .body.mv-messages .chatcol,
+  .body.mv-messages .workspace aside,
+  .body.mv-projects .sb-sessions,
+  .body.mv-sessions .sb-projects {
+    display: none !important;
+  }
+
+  /* The single visible sidebar section takes the full height */
+  .sb-section.sb-projects {
+    max-height: none;
+    flex: 1;
+    border-bottom: none;
+  }
+
+  /* Messages view */
+  .body.mv-messages .msgview {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+  .msgview-head {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0.6rem;
+    padding-left: 3.8rem; /* clear the floating hamburger */
+    min-height: 3.4rem; /* same height as the browser/viewer headers */
+    box-sizing: border-box;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    flex: none;
+  }
+  .msgview-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .msgview-list .msgnav-item {
+    text-align: left;
+    padding: 0.7rem 0.8rem;
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  /* Chat bubbles: use the full screen width (desktop caps them at
+     80%/90%); the chat padding provides the slight margin */
+  .chat {
+    padding: 0.6rem;
+    gap: 1.2rem;
+  }
+  .msg.user,
+  .msg.assistant,
+  .msgrow.assistant .thinking-block {
+    max-width: 100%;
+  }
+  .msgrow {
+    gap: 0.3rem;
+    position: relative; /* anchors the overlaid copy buttons */
+  }
+  /* Assistant bubbles, tool boxes and thinking blocks all share the
+     same full width and the same left/right padding on mobile */
+  .msgrow.assistant .msg,
+  .msgrow.assistant .thinking-block {
+    flex: 1;
+    margin-left: 0;
+  }
+  .msg.tool {
+    margin-right: 0; /* desktop keeps clear of the copy column, which
+                        overlays the bubble on mobile instead */
+  }
+  .msg.tool,
+  .msgrow.assistant .thinking-block {
+    padding: 0.6rem 0.9rem;
+  }
+  /* The assistant bubble's background blends into the page, so its
+     horizontal padding reads as an invisible indent — drop it to
+     align the text with the left/right edges of the boxes */
+  .msg.assistant {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  /* Copy buttons overlay the bubble's top-right corner instead of
+     taking a fixed column, so bubbles can use the full width */
+  .copycol {
+    position: absolute;
+    top: 0.15rem;
+    right: 0.15rem;
+    z-index: 1;
+  }
+  .msg-copy {
+    background: color-mix(in srgb, var(--bg) 65%, transparent);
+    border-radius: 5px;
+  }
+
+  /* Pane headers: clear the floating hamburger (top-left) */
+  .sidebar-head,
+  .msgview-head {
+    padding-left: 3.8rem;
+  }
+  /* Browse / Files views: space above the header row, so the floating
+     hamburger doesn't overlap the header buttons */
+  .browser,
+  .viewer {
+    padding-top: 3.4rem;
+  }
+  /* Let the viewer's action buttons wrap onto multiple rows instead
+     of overflowing the right edge */
+  .viewer-head .head-right {
+    /* own row below the nav + path group, wrapping internally */
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  /* Destructive action pinned to the right edge of the button row */
+  .viewer-head .head-right .danger {
+    margin-left: auto;
+  }
+
+  /* Chat status bar: hidden on mobile; the stats live in the
+     slide-in menu instead, to maximize the viewable chat height */
+  .statusbar {
+    display: none;
+  }
+  .mnav-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.7rem 1.2rem;
+    font-size: 0.85rem;
+    color: var(--status-fg);
+  }
+
+  /* New-project dialog: full-page on mobile */
+  .np-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+    /* match the 6px padding main has on mobile (the fixed overlay
+       would otherwise cover the full viewport edge-to-edge) */
+    inset: 6px;
+  }
+  .np-modal {
+    width: auto;
+    max-height: none;
+    flex: 1;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .np-modal .np-head {
+    /* match the Projects/Sessions .sidebar-head height and clear the
+       floating hamburger */
+    min-height: 3.4rem;
+    box-sizing: border-box;
+    padding-left: 3.8rem;
+  }
+  .np-modal .np-actions {
+    flex-wrap: wrap; /* keep Create/Select/Clone reachable on narrow screens */
+  }
+
+  /* Floating hamburger button */
+  .fab {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 40;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--panel, var(--bg));
+    opacity: 0.85;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+  }
+  .fab span {
+    display: block;
+    width: 16px;
+    height: 2px;
+    background: var(--fg);
+    border-radius: 1px;
+  }
+
+  /* Slide-in navigation drawer */
+  .mnav-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 45;
+  }
+  .mnav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(70vw, 260px);
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .mnav-links {
+    display: flex;
+    flex-direction: column;
+    padding-top: 60px; /* clear the floating hamburger */
+  }
+  .mnav-link {
+    text-align: left;
+    padding: 0.8rem 1.2rem;
+    background: none;
+    border: none;
+    color: var(--fg);
+    font-size: 1rem;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .mnav-link.current {
+    font-weight: 700;
+    background: var(--bg2, rgba(128, 128, 128, 0.12));
+  }
+  .mnav-controls {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.8rem;
+    border-top: 1px solid var(--border);
+  }
+  .mnav-controls select {
+    width: 100%;
+    min-width: 0;
+  }
+}

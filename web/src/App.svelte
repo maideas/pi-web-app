@@ -213,6 +213,27 @@
   let sessionMenuFor = $state(null) // session path whose ⋯ menu is open
   let projectMenuFor = $state(null) // project id whose ⋯ menu is open
 
+  // Mobile layout (< 500px): one full-screen pane at a time, switched
+  // via a slide-in menu opened from a floating hamburger button. All
+  // panes stay mounted (hidden via CSS on .body) to preserve scroll
+  // positions, the editor draft and stream state.
+  let isMobile = $state(false)
+  let mobileView = $state('chat')
+  let mobileMenuOpen = $state(false)
+  const MOBILE_VIEWS = [
+    ['projects', 'Projects'],
+    ['sessions', 'Sessions'],
+    ['messages', 'Messages'],
+    ['chat', 'Chat'],
+    ['browse', 'Browse'],
+    ['files', 'Files'],
+  ]
+  function setMobileView(v) {
+    mobileView = v
+    mobileMenuOpen = false
+    tick().then(updateFades)
+  }
+
   const sidebarKey = () => `sidebarCollapsed:${currentProjectId || 'default'}`
 
   function loadSidebarState() {
@@ -1156,6 +1177,7 @@
     diffView = null
     selectedFile = f
     rememberFile(e.path)
+    if (isMobile) mobileView = 'files'
   }
 
   // After a run that used tools, files may have changed: reload the current
@@ -1287,6 +1309,13 @@
     document
       .querySelector(`.msg.user[data-idx="${i}"]`)
       ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+  // Messages view on mobile: pick a message, switch to the chat pane,
+  // then scroll to it (the chat must be visible before scrolling).
+  async function mobileJumpToMessage(i) {
+    setMobileView('chat')
+    await tick()
+    requestAnimationFrame(() => jumpToMessage(i))
   }
   function truncate(text, n = 80) {
     const t = (text ?? '').replace(/\s+/g, ' ').trim()
@@ -1559,9 +1588,18 @@
   // Project click in the sidebar: confirm while a run is active, then
   // switch (which respawns the pi subprocess with the new cwd).
   async function selectProject(p) {
-    if (p.current || p.outsideWorkspace) return
+    if (p.outsideWorkspace) return
+    // Mobile: tapping the already-current project navigates to the
+    // chat, like any other project (no switch happens).
+    if (p.current) {
+      if (isMobile) mobileView = 'chat'
+      return
+    }
     if (streaming && !window.confirm('Switching projects restarts the agent and kills the running session. Continue?')) return
     await switchProject(p.id)
+    // Mobile: jump straight to the chat, which shows the session that
+    // was last open for this project (restored by the project switch).
+    if (isMobile) mobileView = 'chat'
   }
 
   // No project selected (e.g. the current one was detached): chat and
@@ -1676,6 +1714,7 @@
       await refreshState()
       await refreshStats()
       inputEl?.focus()
+      if (isMobile) mobileView = 'chat'
     }
     await refreshSessions()
   }
@@ -2180,6 +2219,7 @@
     await refreshSessions()
     loadPromptHistory() // re-key to the fresh session
     await refreshStats()
+    if (isMobile) mobileView = 'chat' // jump to the fresh empty chat
     inputEl?.focus()
   }
 
@@ -2255,7 +2295,14 @@
     reinit() // also shows the project README in the file viewer, if present
     reconnectEvents()
     inputEl?.focus()
-    return () => eventSource?.close()
+    const mq = window.matchMedia('(max-width: 499px)')
+    isMobile = mq.matches
+    const onMq = (e) => { isMobile = e.matches }
+    mq.addEventListener('change', onMq)
+    return () => {
+      eventSource?.close()
+      mq.removeEventListener('change', onMq)
+    }
   })
 
   function applySlashSuggestion(c) {
@@ -2331,8 +2378,8 @@
 <svelte:window onclick={() => { sessionMenuFor = null; projectMenuFor = null }} />
 
 <main>
-  <div class="body">
-   {#if sidebarCollapsed}
+  <div class="body mv-{mobileView}">
+   {#if sidebarCollapsed && !isMobile}
     <!-- Collapsed rail: expand toggle at the top, settings right below it -->
     <div class="sidebar-rail" transition:slide={{ duration: 200, axis: 'x' }}>
       <button class="sb-toggle" onclick={toggleSidebar} title="Show projects and sessions" aria-label="Show projects and sessions" aria-expanded="false">
@@ -2429,7 +2476,7 @@
           <div class="sb-item" class:current={s.current}>
             <button
               class="sb-session"
-              onclick={() => !s.current && switchToSession(s.path)}
+              onclick={() => (s.current ? (isMobile && (mobileView = 'chat')) : switchToSession(s.path))}
               title={s.name}
             >
               <span class="sb-name">{s.name}</span>
@@ -2471,61 +2518,7 @@
       </select>
       </div>
     </div>
-  {#if showNewProject}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="np-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (showNewProject = false)}>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <div class="np-modal" role="dialog" aria-modal="true" aria-label="Choose project directory" tabindex="-1" oninput={pokeDialogTimer} onfocusin={pokeDialogTimer} onclick={pokeDialogTimer}>
-        <div class="np-head">
-          <span class="np-title">Choose project directory</span>
-          <button class="np-close" onclick={() => (showNewProject = false)}>×</button>
-        </div>
-        <div class="np-path">
-          <span title={npFullPath()}>{npBase}/{npPath}</span>
-        </div>
-        <div class="np-list">
-          {#if npParent !== null}
-            <button class="direntry" onclick={() => browseDirs(npParent)}>
-              <span class="icon">📁</span>
-              <span class="name">..</span>
-            </button>
-          {/if}
-          {#each npEntries as e}
-            <button class="direntry" onclick={() => browseDirs(e.path)}>
-              <span class="icon">📁</span>
-              <span class="name">{e.name}</span>
-            </button>
-          {:else}
-            <div class="np-empty">No subdirectories here.</div>
-          {/each}
-        </div>
-        <div class="np-actions">
-          <input
-            type="text"
-            bind:value={npFolder}
-            placeholder="new folder name"
-            onkeydown={(e) => e.key === 'Enter' && npFolder.trim() && chooseProjectDir(`${npFullPath()}/${npFolder.trim()}`, npGit)}
-          />
-          <label><input type="checkbox" bind:checked={npGit} /> git init</label>
-          <button onclick={() => chooseProjectDir(`${npFullPath()}/${npFolder.trim()}`, npGit)} disabled={!npFolder.trim()}>Create</button>
-          <button onclick={() => chooseProjectDir(npFullPath(), false)} disabled={!npPath}>Select</button>
-        </div>
-        <div class="np-actions">
-          <input
-            type="text"
-            bind:value={npGitUrl}
-            placeholder="git repo URL (https://… or git@…)"
-            disabled={npCloning}
-            onkeydown={(e) => e.key === 'Enter' && cloneProject()}
-          />
-          <button onclick={cloneProject} disabled={!npGitUrl.trim() || npCloning}>
-            {npCloning ? 'Cloning…' : 'Clone'}
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
+
   <div class="chat-body" onscrollcapture={updateFades}>
     <div class="fade fade-top" class:visible={chatFadeTop}></div>
     <div class="fade fade-bottom" class:visible={chatFadeBottom}></div>
@@ -2596,7 +2589,7 @@
           </div>
         {/if}
       {:else if entry.role === 'bash'}
-        <details class="msg tool bash" class:error={entry.done && !entry.cancelled && (entry.error || entry.exitCode !== 0)} class:ok={entry.done && !entry.error && entry.exitCode === 0} open>
+        <details class="msg tool bash" class:error={entry.done && !entry.cancelled && (entry.error || entry.exitCode !== 0)} class:ok={entry.done && !entry.error && entry.exitCode === 0} open={!isMobile}>
           <summary>
             <code class="bash-cmd">{entry.exclude ? '!!' : '!'}{entry.command}</code>
             <span class="bash-badge" title={entry.exclude ? 'output stays local; the model never sees it' : 'output is added to the model context with the next prompt'}>{entry.exclude ? 'local' : 'in context'}</span>
@@ -2615,7 +2608,7 @@
           {#if entry.output}<pre>{entry.output}</pre>{/if}
         </details>
       {:else}
-        <details class="msg tool" class:error={entry.isError} class:ok={entry.done && !entry.isError} open>
+        <details class="msg tool" class:error={entry.isError} class:ok={entry.done && !entry.isError} open={!isMobile}>
           <summary>
             🔧 {entry.name}
             {#if entry.args?.command}<code>{entry.args.command}</code>{/if}
@@ -2878,6 +2871,124 @@
       </div>
     </div>
    {/if}
+   <!-- Mobile messages view: full-screen list of the user's own
+        messages; picking one switches to the chat and scrolls there.
+        Hidden on desktop (the gap-dots popup serves this there). -->
+   <div class="msgview">
+     <div class="msgview-head">Your messages</div>
+     <div class="msgview-list">
+       {#each userMessages as { e, i } (i)}
+         <button class="msgnav-item" onclick={() => mobileJumpToMessage(i)}>{truncate(e.text)}</button>
+       {:else}
+         <div class="msgnav-empty">No messages yet.</div>
+       {/each}
+     </div>
+   </div>
    </div>
   </div>
+
+  {#if showNewProject}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="np-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (showNewProject = false)}>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="np-modal" role="dialog" aria-modal="true" aria-label="Choose project directory" tabindex="-1" oninput={pokeDialogTimer} onfocusin={pokeDialogTimer} onclick={pokeDialogTimer}>
+        <div class="np-head">
+          <span class="np-title">Choose project directory</span>
+          <button class="np-close" onclick={() => (showNewProject = false)}>×</button>
+        </div>
+        <div class="np-path">
+          <span title={npFullPath()}>{npBase}/{npPath}</span>
+        </div>
+        <div class="np-list">
+          {#if npParent !== null}
+            <button class="direntry" onclick={() => browseDirs(npParent)}>
+              <span class="icon">📁</span>
+              <span class="name">..</span>
+            </button>
+          {/if}
+          {#each npEntries as e}
+            <button class="direntry" onclick={() => browseDirs(e.path)}>
+              <span class="icon">📁</span>
+              <span class="name">{e.name}</span>
+            </button>
+          {:else}
+            <div class="np-empty">No subdirectories here.</div>
+          {/each}
+        </div>
+        <div class="np-actions">
+          <input
+            type="text"
+            bind:value={npFolder}
+            placeholder="new folder name"
+            onkeydown={(e) => e.key === 'Enter' && npFolder.trim() && chooseProjectDir(`${npFullPath()}/${npFolder.trim()}`, npGit)}
+          />
+          <label><input type="checkbox" bind:checked={npGit} /> git init</label>
+          <button onclick={() => chooseProjectDir(`${npFullPath()}/${npFolder.trim()}`, npGit)} disabled={!npFolder.trim()}>Create</button>
+          <button onclick={() => chooseProjectDir(npFullPath(), false)} disabled={!npPath}>Select</button>
+        </div>
+        <div class="np-actions">
+          <input
+            type="text"
+            bind:value={npGitUrl}
+            placeholder="git repo URL (https://… or git@…)"
+            disabled={npCloning}
+            onkeydown={(e) => e.key === 'Enter' && cloneProject()}
+          />
+          <button onclick={cloneProject} disabled={!npGitUrl.trim() || npCloning}>
+            {npCloning ? 'Cloning…' : 'Clone'}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Mobile navigation: floating hamburger opens a slide-in menu with
+       the view links and the model/thinking selectors (which live in
+       the chat toolbar on desktop). -->
+  {#if isMobile}
+    <button class="fab" aria-label="Open menu" aria-expanded={mobileMenuOpen} onclick={() => { mobileMenuOpen = !mobileMenuOpen; showNewProject = false }}>
+      <span></span><span></span><span></span>
+    </button>
+    {#if mobileMenuOpen}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="mnav-backdrop" onclick={() => (mobileMenuOpen = false)}></div>
+      <nav class="mnav" transition:slide={{ duration: 200, axis: 'x' }} aria-label="Views">
+        <div class="mnav-links">
+          {#each MOBILE_VIEWS as [v, label]}
+            <button class="mnav-link" class:current={mobileView === v} onclick={() => setMobileView(v)}>{label}</button>
+          {/each}
+        </div>
+        <div class="mnav-controls">
+          <select class="model-select" value={currentModel ? `${currentModel.provider}::${currentModel.id}` : ''} onchange={onModelChange}>
+            {#each models as m}
+              <option value={`${m.provider}::${m.id}`} selected={currentModel && m.provider === currentModel.provider && m.id === currentModel.id}>
+                {m.name ?? m.id}
+              </option>
+            {/each}
+          </select>
+          <select value={thinkingLevel} onchange={onThinkingChange}>
+            {#each thinkingLevels as l}
+              <option value={l} selected={l === thinkingLevel}>{l}</option>
+            {/each}
+          </select>
+        </div>
+        <!-- Session stats: on mobile they live here in the menu
+             instead of the chat status bar, to save vertical space -->
+        <div class="mnav-stats">
+          {#if stats}
+            <span>tokens: {stats.tokens?.total?.toLocaleString() ?? '—'}</span>
+            <span>cost: {fmtCost(stats.cost)}</span>
+            {#if stats.contextUsage}
+              <span>context: {stats.contextUsage.percent != null ? Math.round(stats.contextUsage.percent * 100) / 100 : '—'}% ({stats.contextUsage.tokens?.toLocaleString() ?? '—'}/{stats.contextUsage.contextWindow?.toLocaleString() ?? '—'})</span>
+            {/if}
+            <span>tool calls: {stats.toolCalls ?? 0}</span>
+          {:else}
+            <span>loading stats…</span>
+          {/if}
+        </div>
+      </nav>
+    {/if}
+  {/if}
 </main>

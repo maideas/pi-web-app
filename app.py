@@ -1543,6 +1543,10 @@ def download(rel):
 @app.route("/")
 def index():
     resp = send_from_directory(DIST_DIR, "index.html")
+    # Always revalidate index.html: it references the hashed JS/CSS
+    # bundles, so a stale copy keeps loading an outdated build. (The
+    # hashed assets themselves remain safely cacheable.)
+    resp.headers["Cache-Control"] = "no-cache"
     # Defense-in-depth against sanitizer regressions: the app renders
     # agent- and file-controlled markdown. 'unsafe-inline' styles are
     # needed for Svelte style attributes and the injected hljs themes.
