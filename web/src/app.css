@@ -1364,7 +1364,7 @@ select {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 0.6rem; /* same as the file viewer header */
   height: 3.6rem;
   box-sizing: border-box;
   font-size: 1rem;
