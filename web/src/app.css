@@ -1997,7 +1997,7 @@ select {
   }
   /* The browser/viewer splitter is a sibling of .browser, not a
      child — hide it so it doesn't show as a stray line in the
-     full-screen Browse/Files views */
+     full-screen Files/viewer views */
   .workspace aside .splitter {
     display: none !important;
   }
@@ -2119,7 +2119,7 @@ select {
   .msgview-head {
     padding-left: 3.8rem;
   }
-  /* Browse / Files views: space above the header row, so the floating
+  /* Files / viewer views: space above the header row, so the floating
      hamburger doesn't overlap the header buttons */
   .browser,
   .viewer {
