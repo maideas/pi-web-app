@@ -2465,8 +2465,8 @@
    {/if}
    <div class="workspace" bind:this={bodyEl}>
    <!-- chatRatio marks the splitter position; the chat column ends
-        50px earlier, preserving the gap that hosts the dot menu -->
-   <div class="chatcol" style="flex: 0 0 calc({(chatRatio * 100).toFixed(2)}% - 51px)">
+        2vw earlier, preserving the gap that hosts the dot menu -->
+   <div class="chatcol" style="flex: 0 0 calc({(chatRatio * 100).toFixed(2)}% - 2vw - 1px)">
     <div class="toolbar">
       <div class="tgroup">
       <select class="model-select" value={currentModel ? `${currentModel.provider}::${currentModel.id}` : ''} onchange={onModelChange}>
@@ -2705,7 +2705,7 @@
   </div>
    </div>
 
-   <button class="gap-dots" style="left: calc({(chatRatio * 100).toFixed(2)}% - 26px)" aria-label="Jump to one of your messages" onmouseenter={openMsgNav} onmouseleave={scheduleCloseMsgNav} onfocus={openMsgNav} onblur={scheduleCloseMsgNav} onclick={openMsgNav}>
+   <button class="gap-dots" style="left: calc({(chatRatio * 100).toFixed(2)}% - 1vw - 0.5px)" aria-label="Jump to one of your messages" onmouseenter={openMsgNav} onmouseleave={scheduleCloseMsgNav} onfocus={openMsgNav} onblur={scheduleCloseMsgNav} onclick={openMsgNav}>
     <span></span><span></span><span></span>
    </button>
 
