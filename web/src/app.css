@@ -1386,7 +1386,8 @@ select {
   line-height: 1.5;
 }
 
-/* New-file / new-dir buttons on the right side of the browser header */
+/* New-file / new-dir buttons on the right side of the browser header,
+   refresh button on the left of the path */
 .browser-actions {
   display: flex;
   gap: 0.4rem;
@@ -1396,7 +1397,8 @@ select {
 /* Same metrics as the toolbar / viewer-head buttons (height, padding,
    font), so the header buttons look identical to the other accent
    buttons in the app. */
-.browser-actions button {
+.browser-actions button,
+.browser-path > button {
   height: 2rem;
   box-sizing: border-box;
   line-height: 1;
