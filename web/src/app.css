@@ -1362,6 +1362,9 @@ select {
 
 .browser-path {
   display: flex;
+  flex-wrap: wrap; /* the action buttons wrap under the refresh + path
+                     group when the pane gets too narrow, like the file
+                     viewer header */
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.6rem; /* same as the file viewer header — no
@@ -1372,6 +1375,25 @@ select {
   color: var(--muted);
   border-bottom: 1px solid var(--border-soft);
   white-space: nowrap;
+}
+
+/* Two boxes mirroring .viewer-head .head-left / .head-right: refresh +
+   path on the left, action buttons on the right. The left box takes
+   the remaining space (min-width 0 lets the path ellipsize); the right
+   box hugs its buttons and wraps below the left box when they no
+   longer fit side by side. */
+.browser-path .head-left {
+  /* basis auto (content width), not 0: with a 0 basis this box would
+     shrink to nothing, the line would never overflow, and the fixed-
+     width buttons inside would spill over the right box instead of
+     wrapping. */
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden; /* clip instead of bleeding into the right box if
+                       the pane gets narrower than the refresh button */
 }
 
 /* Clip long paths on the span, not the parent container, so the
@@ -1386,19 +1408,22 @@ select {
   line-height: 1.5;
 }
 
-/* New-file / new-dir buttons on the right side of the browser header,
-   refresh button on the left of the path */
+/* New-file / new-dir / delete buttons on the right side of the
+   browser header */
 .browser-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  margin-left: auto; /* pushes the box to the right edge while it fits
+                        on one line; once wrapped below the left box it
+                        still spans the available width, left-aligned */
 }
 
 /* Same metrics as the toolbar / viewer-head buttons (height, padding,
    font), so the header buttons look identical to the other accent
    buttons in the app. */
-.browser-actions button,
-.browser-path > button {
+.browser-path button {
   height: 2rem;
   box-sizing: border-box;
   line-height: 1;

@@ -2779,8 +2779,10 @@
    <aside bind:this={asideEl}>
     <div class="browser" style="height: {(browserRatio * 100).toFixed(2)}%">
       <div class="browser-path">
-        <button title="refresh the directory listing" onclick={() => browse(browserPath)}>refresh</button>
-        <span>/{browserPath}</span>
+        <div class="head-left">
+          <button title="refresh the directory listing" onclick={() => browse(browserPath)}>refresh</button>
+          <span>/{browserPath}</span>
+        </div>
         <div class="browser-actions">
           <button title="create a new file here" onclick={() => openNewEntry('file')}>new file</button>
           <button title="create a new directory here" onclick={() => openNewEntry('dir')}>new dir</button>
