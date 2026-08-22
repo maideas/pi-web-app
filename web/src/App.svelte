@@ -1107,6 +1107,29 @@
     await browse(browserPath)
   }
 
+  // Delete the directory currently shown in the browser (after
+  // confirmation) together with everything below it, then navigate to
+  // its parent. Any file from the deleted subtree is dropped from the
+  // viewer and its back/forward stacks.
+  async function deleteBrowserDir() {
+    const path = browserPath
+    if (!path) return // project root — nothing above to delete safely
+    if (!confirm(`Delete /${path} and all files and directories below it?`)) return
+    const resp = await apiPost('/api/file/delete', { path })
+    if (!resp.success) {
+      entries.push({ role: 'system', text: `⚠️ delete failed: ${resp.error ?? 'unknown error'}` })
+      return
+    }
+    if (selectedFile?.path.startsWith(path + '/')) {
+      quitEdit({ force: true })
+      selectedFile = null
+      diffView = null
+    }
+    viewerHistory = viewerHistory.filter((p) => !(p === path || p.startsWith(path + '/')))
+    viewerFuture = viewerFuture.filter((p) => !(p === path || p.startsWith(path + '/')))
+    await browse(browserParent ?? '')
+  }
+
   // Rename modal: shown from the viewer header, renames the file in
   // its parent directory. History stacks are rewritten to the new path
   // so back/forward still work; the viewer then loads the renamed file.
@@ -2761,6 +2784,7 @@
         <div class="browser-actions">
           <button title="create a new file here" onclick={() => openNewEntry('file')}>new file</button>
           <button title="create a new directory here" onclick={() => openNewEntry('dir')}>new dir</button>
+          <button class="danger" title="delete this directory and everything below it" disabled={!browserPath} onclick={deleteBrowserDir}>delete</button>
         </div>
       </div>
       <div class="browser-body" onscrollcapture={updateFades}>

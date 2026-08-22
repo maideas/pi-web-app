@@ -1407,6 +1407,13 @@ select {
   margin: 0;
 }
 
+/* Same red styling as the file viewer header's delete button
+   (.viewer-head .dl.danger). */
+.browser-actions button.danger {
+  background: #b33;
+  color: #fff;
+}
+
 /* New file/dir input mask (reuses the np-* modal chrome) */
 .ne-modal {
   width: min(380px, 90vw);

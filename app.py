@@ -1416,11 +1416,22 @@ def api_diff():
 
 @app.route("/api/file/delete", methods=["POST"])
 def api_file_delete():
+    """Delete a file, or a directory together with all its contents.
+
+    Deleting the project root itself is rejected — that would wipe the
+    whole project (and the pi session state inside it).
+    """
     p = safe_path((request.get_json(silent=True) or {}).get("path", ""))
-    if not p.is_file():
-        http_abort(404)
+    root = project_root().resolve()
+    if p == root:
+        return jsonify({"success": False, "error": "cannot delete the project root"}), 403
     try:
-        p.unlink()
+        if p.is_dir():
+            shutil.rmtree(p)
+        elif p.is_file():
+            p.unlink()
+        else:
+            http_abort(404)
     except OSError as e:
         return jsonify({"success": False, "error": str(e)}), 500
     return jsonify({"success": True})
