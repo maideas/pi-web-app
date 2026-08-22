@@ -1671,7 +1671,23 @@ select {
 
 .viewer-head .head-right {
   justify-content: flex-end;
-  flex: 0 0 auto;
+  /* shrinkable (0 1, not 0 0): head-left shrinks first (min-width 0,
+     overflow hidden), and once it is exhausted head-right is
+     constrained too — only then does its own flex-wrap take effect
+     and the file-actions group drops to a second line */
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+}
+
+/* edit / download / delete travel together: the group is an
+   unbreakable flex child, so it wraps as a whole, never splitting
+   the buttons across lines. */
+.viewer-head .file-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .viewer-head .nav {
@@ -2136,6 +2152,13 @@ select {
   /* Destructive action pinned to the right edge of the button row */
   .viewer-head .head-right .danger {
     margin-left: auto;
+  }
+  /* keep the file-actions group left-aligned with the other buttons
+     when it drops to its own row, and span the full row so the
+     destructive action can still be pinned to the right edge */
+  .viewer-head .file-actions {
+    margin-left: 0;
+    flex: 1 1 100%;
   }
 
   /* Chat status bar: hidden on mobile; the stats live in the

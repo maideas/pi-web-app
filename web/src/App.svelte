@@ -2756,9 +2756,11 @@
               <button class="dl" title="jump to previous diff block" disabled={!diffBlockCount || diffAtFirst} onclick={() => diffGo(-1)}>▲</button>
               <button class="dl" title="jump to next diff block" disabled={!diffBlockCount || diffAtLast} onclick={() => diffGo(1)}>▼</button>
               <button class="dl" class:active={diffView} title="toggle in-file diff against git HEAD" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>diff view</button>
-              <button class="dl" title="edit file" disabled={selectedFile.image || selectedFile.text === null || !!diffView || editSwitching} onclick={enterEdit}>edit</button>
-              <a class="dl" href={`/download/${encPath(selectedFile.path)}`} download>download</a>
-              <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
+              <span class="file-actions">
+                <button class="dl" title="edit file" disabled={selectedFile.image || selectedFile.text === null || !!diffView || editSwitching} onclick={enterEdit}>edit</button>
+                <a class="dl" href={`/download/${encPath(selectedFile.path)}`} download>download</a>
+                <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
+              </span>
             {/if}
           </div>
         </div>
