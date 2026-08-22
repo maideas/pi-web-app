@@ -2326,7 +2326,7 @@
     inputEl.style.overflowY = content > line * INPUT_MAX_LINES ? 'auto' : 'hidden'
   }
   $effect(() => {
-    input // track: re-run on every keystroke and on reset after send
+    input, isMobile // track: re-run on every keystroke, breakpoint change, reset after send
     autogrowInput()
   })
 
@@ -2660,8 +2660,14 @@
       bind:value={input}
       onfocus={() => (showNewProject = false)}
       onkeydown={onKeydown}
-      placeholder={streaming ? 'Agent is working — type to steer, Enter to send…' : 'Prompt pi… (Enter to send, Shift+Enter for newline)'}
-      rows="2"
+      placeholder={streaming
+        ? isMobile
+          ? 'Agent is working — send to steer…'
+          : 'Agent is working — type to steer, Enter to send…'
+        : isMobile
+          ? 'Prompt pi…'
+          : 'Prompt pi… (Enter to send, Shift+Enter for newline)'}
+      rows={isMobile ? 1 : 2}
     ></textarea>
     <!-- While the agent works, an empty input means the button aborts;
          with content it becomes a steer/send button again -->
