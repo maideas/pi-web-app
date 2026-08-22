@@ -1670,13 +1670,23 @@ select {
 }
 
 .viewer-head .head-right {
-  justify-content: flex-end;
-  /* shrinkable (0 1, not 0 0): head-left shrinks first (min-width 0,
-     overflow hidden), and once it is exhausted head-right is
-     constrained too — only then does its own flex-wrap take effect
-     and the file-actions group drops to a second line */
+  /* margin-left: auto (instead of justify-content: flex-end) pushes
+     the whole box to the right edge while it fits on one line. Once
+     it must wrap internally, the box spans the available width and
+     its lines start at the left — so the wrapped ▲/▼/diff-view line
+     and the file-actions line are both left-aligned. */
   flex: 0 1 auto;
   flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* ▲ / ▼ / diff view travel as one group, mirroring .file-actions */
+.viewer-head .diff-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* edit / download / delete travel together: the group is an
