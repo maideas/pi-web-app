@@ -2957,7 +2957,7 @@
        the view links and the model/thinking selectors (which live in
        the chat toolbar on desktop). -->
   {#if isMobile}
-    <button class="fab" aria-label="Open menu" aria-expanded={mobileMenuOpen} onclick={() => { mobileMenuOpen = !mobileMenuOpen; showNewProject = false }}>
+    <button class="fab" aria-label="Open menu" aria-expanded={mobileMenuOpen} onclick={() => { mobileMenuOpen = !mobileMenuOpen; showNewProject = false; newEntryKind = null }}>
       <span></span><span></span><span></span>
     </button>
     {#if mobileMenuOpen}
