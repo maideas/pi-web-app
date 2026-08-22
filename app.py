@@ -968,8 +968,11 @@ def _auto_name_locked(force: bool):
     )
     model = data.get("model") or {}
     # Strip everything irrelevant for a six-word title: the default coding
-    # system prompt, AGENTS.md context, extensions, skills, templates and
-    # thinking together cost ~3.5k input tokens per call; this runs at ~50.
+    # system prompt, AGENTS.md context, extensions, skills and templates
+    # together cost ~3.5k input tokens per call; this runs at ~50. Thinking
+    # is left at the model's default — some endpoints reject disabled
+    # reasoning ("Reasoning is mandatory for this endpoint") and the few
+    # extra tokens on a once-per-session call are not worth a failed run.
     cmd = [
         "pi",
         "--print",
@@ -979,8 +982,6 @@ def _auto_name_locked(force: bool):
         "--no-extensions",
         "--no-skills",
         "--no-prompt-templates",
-        "--thinking",
-        "off",
         "--system-prompt",
         "You generate short chat-session titles.",
     ]
@@ -993,19 +994,6 @@ def _auto_name_locked(force: bool):
             cmd, input=digest, capture_output=True, text=True, timeout=60,
             check=False, cwd=project_root(),
         )
-        if r.returncode != 0:
-            # The first attempt can fail for provider reasons — e.g. some
-            # endpoints reject --thinking off with a 400 ("Reasoning is
-            # mandatory for this endpoint"). Retry once without the flag;
-            # the extra thinking tokens are acceptable.
-            retry = [a for a in cmd]
-            if "--thinking" in retry:
-                del retry[retry.index("--thinking") : retry.index("--thinking") + 2]
-            r = subprocess.run(
-                retry,
-                input=digest, capture_output=True, text=True, timeout=60,
-                check=False, cwd=project_root(),
-            )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return jsonify({"success": False, "error": f"naming call failed: {exc}"})
     first_line = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
