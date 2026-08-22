@@ -993,6 +993,19 @@ def _auto_name_locked(force: bool):
             cmd, input=digest, capture_output=True, text=True, timeout=60,
             check=False, cwd=project_root(),
         )
+        if r.returncode != 0:
+            # The first attempt can fail for provider reasons — e.g. some
+            # endpoints reject --thinking off with a 400 ("Reasoning is
+            # mandatory for this endpoint"). Retry once without the flag;
+            # the extra thinking tokens are acceptable.
+            retry = [a for a in cmd]
+            if "--thinking" in retry:
+                del retry[retry.index("--thinking") : retry.index("--thinking") + 2]
+            r = subprocess.run(
+                retry,
+                input=digest, capture_output=True, text=True, timeout=60,
+                check=False, cwd=project_root(),
+            )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return jsonify({"success": False, "error": f"naming call failed: {exc}"})
     first_line = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
