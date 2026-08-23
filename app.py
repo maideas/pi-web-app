@@ -1475,31 +1475,6 @@ def api_file_create():
     return jsonify({"success": True, "path": str(target.relative_to(project_root()))})
 
 
-@app.route("/api/file/rename", methods=["POST"])
-def api_file_rename():
-    """Rename (or move within its directory) the file currently shown
-    in the viewer. The new name must be a plain name without path
-    separators; the file stays in its parent directory.
-    """
-    data = request.get_json(silent=True) or {}
-    name = str(data.get("name", "")).strip()
-    if not name or name in (".", "..") or "/" in name or "\\" in name or "\x00" in name:
-        return jsonify({"success": False, "error": "invalid name"}), 400
-    p = safe_path(data.get("path", ""))
-    if not p.is_file():
-        http_abort(404)
-    target = p.parent / name
-    if not contained(target.resolve(), project_root().resolve()):
-        http_abort(403)
-    try:
-        p.rename(target)
-    except FileExistsError:
-        return jsonify({"success": False, "error": f"{name} already exists"}), 409
-    except OSError as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-    return jsonify({"success": True, "path": str(target.relative_to(project_root()))})
-
-
 @app.route("/api/file/save", methods=["POST"])
 def api_file_save():
     """Save file content from the viewer's edit mode.

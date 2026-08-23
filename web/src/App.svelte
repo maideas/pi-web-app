@@ -1130,52 +1130,6 @@
     await browse(browserParent ?? '')
   }
 
-  // Rename modal: shown from the viewer header, renames the file in
-  // its parent directory. History stacks are rewritten to the new path
-  // so back/forward still work; the viewer then loads the renamed file.
-  let renameOpen = $state(false)
-  let renameName = $state('')
-  let renameError = $state('')
-  let renameBusy = $state(false)
-  let renameInput = $state(null)
-
-  function openRename() {
-    if (!selectedFile) return
-    renameName = selectedFile.path.split('/').pop()
-    renameError = ''
-    renameOpen = true
-    tick().then(() => {
-      renameInput?.focus()
-      renameInput?.select()
-    })
-  }
-
-  async function doRename() {
-    const path = selectedFile?.path
-    const name = renameName.trim()
-    if (!path || !name || renameBusy) return
-    if (name.includes('/') || name === '.' || name === '..') {
-      renameError = 'Name must not contain / or be . / ..'
-      return
-    }
-    if (name === path.split('/').pop()) {
-      renameOpen = false
-      return
-    }
-    renameBusy = true
-    renameError = ''
-    const resp = await apiPost('/api/file/rename', { path, name })
-    renameBusy = false
-    if (!resp.success) {
-      renameError = resp.error ?? 'rename failed'
-      return
-    }
-    renameOpen = false
-    viewerHistory = viewerHistory.map((p) => (p === path ? resp.path : p))
-    viewerFuture = viewerFuture.map((p) => (p === path ? resp.path : p))
-    await showFileAt(resp.path)
-  }
-
   // "New file" / "new dir" input mask (modal). Creates the entry in
   // the directory the browser currently shows (browserPath).
   let newEntryKind = $state(null) // null | 'file' | 'dir'
@@ -2832,7 +2786,6 @@
               </span>
               <span class="file-actions">
                 <button class="dl" title="edit file" disabled={selectedFile.image || selectedFile.text === null || !!diffView || editSwitching} onclick={enterEdit}>edit</button>
-                <button class="dl" title="rename file" disabled={!!diffView} onclick={openRename}>rename</button>
                 <a class="dl" href={`/download/${encPath(selectedFile.path)}`} download>download</a>
                 <button class="dl danger" title="delete file from disk" onclick={deleteViewerFile}>delete</button>
               </span>
@@ -2926,34 +2879,6 @@
       </div>
     </div>
    </aside>
-   {#if renameOpen}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="np-overlay" role="presentation" onclick={(e) => e.target === e.currentTarget && (renameOpen = false)}>
-      <div class="np-modal ne-modal" role="dialog" aria-modal="true" aria-label="Rename file">
-        <div class="np-head">
-          <span class="np-title">Rename /{selectedFile?.path}</span>
-          <button class="np-close" onclick={() => (renameOpen = false)}>×</button>
-        </div>
-        <div class="np-actions">
-          <input
-            type="text"
-            bind:this={renameInput}
-            bind:value={renameName}
-            placeholder="new name"
-            disabled={renameBusy}
-            onkeydown={(e) => e.key === 'Enter' && doRename()}
-          />
-          <button onclick={doRename} disabled={!renameName.trim() || renameBusy}>
-            {renameBusy ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-        {#if renameError}
-          <div class="ne-error">{renameError}</div>
-        {/if}
-      </div>
-    </div>
-   {/if}
    {#if newEntryKind}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -3058,7 +2983,7 @@
        the view links and the model/thinking selectors (which live in
        the chat toolbar on desktop). -->
   {#if isMobile}
-    <button class="fab" aria-label="Open menu" aria-expanded={mobileMenuOpen} onclick={() => { mobileMenuOpen = !mobileMenuOpen; showNewProject = false; newEntryKind = null; renameOpen = false; slashDismissed = true }}>
+    <button class="fab" aria-label="Open menu" aria-expanded={mobileMenuOpen} onclick={() => { mobileMenuOpen = !mobileMenuOpen; showNewProject = false; newEntryKind = null; slashDismissed = true }}>
       <span></span><span></span><span></span>
     </button>
     {#if mobileMenuOpen}
