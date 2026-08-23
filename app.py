@@ -907,8 +907,10 @@ def auto_name():
     whether generated or set manually, is never overwritten without an
     explicit request. Content threshold: the user messages combined
     must reach MIN_USER_CHARS — user requests drive the topic, so the
-    digest and the threshold both ignore assistant replies. No-ops
-    return success=false with a reason.
+    digest and the threshold both ignore assistant replies. With
+    {"force": true} (manual /rename) any non-empty content suffices;
+    assistant text is used as a fallback when there is no user text.
+    No-ops return success=false with a reason.
 
     Serialized via auto_name_lock (a second tab or a /rename during an
     auto-name would otherwise rename twice). If the session changes
@@ -947,8 +949,14 @@ def _auto_name_locked(force: bool):
     messages = msgs.get("data", {}).get("messages", []) if msgs.get("success") else []
     # Skip textless messages: a turn can be thinking + tool calls only.
     user_texts = [t for m in messages if m.get("role") == "user" if (t := text_of(m)).strip()]
-    if sum(len(t) for t in user_texts) < MIN_USER_CHARS:
-        return jsonify({"success": False, "error": "not enough content"})
+    if sum(len(t) for t in user_texts) < (1 if force else MIN_USER_CHARS):
+        # A manual /rename works with any content length — but not with
+        # none at all. Fall back to assistant text so an empty-on-the-user-
+        # side session can still be named.
+        asst_texts = [t for m in messages if m.get("role") == "assistant" if (t := text_of(m)).strip()]
+        if not (force and (user_texts or asst_texts)):
+            return jsonify({"success": False, "error": "not enough content"})
+        user_texts = user_texts or asst_texts
 
     # Title from the user messages only, first one nearly in full, the
     # rest truncated — assistant replies mostly restate the requests
@@ -956,7 +964,7 @@ def _auto_name_locked(force: bool):
     digest = f"User: {user_texts[0][:400]}"
     if len(user_texts) > 1:
         digest += "\n" + "\n".join(f"User: {t[:240]}" for t in user_texts[1:])
-    # The digest (user chat content) is piped via stdin — pi --print
+    # The digest (chat content) is piped via stdin — pi --print
     # prepends piped stdin to the argv message (with no separator, and
     # stdin gets trimmed) — so chat text never appears in the process
     # argv (visible to all local users via /proc/*/cmdline).
