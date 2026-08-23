@@ -404,6 +404,13 @@ main {
   flex-direction: column;
 }
 
+/* Flipped variant: open upward when the row is at the bottom of the
+   scroll area, so the popup is never clipped away by .sb-list */
+.sb-menu.flip {
+  top: auto;
+  bottom: calc(100% - 4px);
+}
+
 .sb-menu-item {
   background: none;
   border: none;

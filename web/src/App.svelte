@@ -212,6 +212,7 @@
   let sidebarCollapsed = $state(localStorage.getItem('sidebarCollapsed:default') === '1')
   let sessionMenuFor = $state(null) // session path whose ⋯ menu is open
   let projectMenuFor = $state(null) // project id whose ⋯ menu is open
+  let menuFlip = $state(false) // open the ⋯ menu upward when the row sits at the bottom of its scroll area
 
   // Mobile layout (<= 1024px): one full-screen pane at a time, switched
   // via a slide-in menu opened from a floating hamburger button. All
@@ -245,16 +246,34 @@
     localStorage.setItem(sidebarKey(), sidebarCollapsed ? '1' : '0')
   }
 
+  // The ⋯ popup is anchored below its row inside the sidebar's scroll
+  // container (.sb-list, overflow-y: auto). For the last visible row the
+  // popup would extend past the visible scroll area and be clipped away —
+  // so measure at open time and flip it upward when there is no room.
+  function menuFitsBelow(btn) {
+    const scroller = btn.closest('.sb-list')
+    if (!scroller) return true
+    const btnRect = btn.getBoundingClientRect()
+    const listRect = scroller.getBoundingClientRect()
+    // Approximate popup height: padding + one ~2rem item (matches .sb-menu).
+    const menuH = 4 /* gap */ + 2.1 * 16
+    return btnRect.bottom + menuH <= listRect.bottom + 1
+  }
+
   function toggleSessionMenu(e, path) {
     e.stopPropagation()
     projectMenuFor = null
-    sessionMenuFor = sessionMenuFor === path ? null : path
+    if (sessionMenuFor === path) { sessionMenuFor = null; return }
+    sessionMenuFor = path
+    menuFlip = !menuFitsBelow(e.currentTarget)
   }
 
   function toggleProjectMenu(e, id) {
     e.stopPropagation()
     sessionMenuFor = null
-    projectMenuFor = projectMenuFor === id ? null : id
+    if (projectMenuFor === id) { projectMenuFor = null; return }
+    projectMenuFor = id
+    menuFlip = !menuFitsBelow(e.currentTarget)
   }
 
   async function deleteSession(s) {
@@ -2468,7 +2487,7 @@
             </button>
             <button class="sb-menu-btn" title="Project actions" aria-label="Project actions" onclick={(e) => toggleProjectMenu(e, p.id)}>⋯</button>
             {#if projectMenuFor === p.id}
-              <div class="sb-menu" role="menu">
+              <div class="sb-menu" class:flip={menuFlip} role="menu">
                 <button
                   class="sb-menu-item danger"
                   role="menuitem"
@@ -2507,7 +2526,7 @@
             </button>
             <button class="sb-menu-btn" title="Session actions" aria-label="Session actions" onclick={(e) => toggleSessionMenu(e, s.path)}>⋯</button>
             {#if sessionMenuFor === s.path}
-              <div class="sb-menu" role="menu">
+              <div class="sb-menu" class:flip={menuFlip} role="menu">
                 <button class="sb-menu-item danger" role="menuitem" onclick={() => deleteSession(s)}>delete</button>
               </div>
             {/if}
