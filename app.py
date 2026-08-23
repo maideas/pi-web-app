@@ -1113,7 +1113,7 @@ def create_project():
         except OSError as exc:
             return jsonify({"success": False, "error": f"cannot create: {exc}"}), 400
         if body.get("gitInit"):
-            subprocess.run(["git", "init"], cwd=p, capture_output=True, check=False)
+            subprocess.run(["git", "init", "-b", "main"], cwd=p, capture_output=True, check=False)
     return register_project(p)
 
 
