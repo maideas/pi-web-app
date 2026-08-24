@@ -27,7 +27,9 @@ Features:
   or clone (git URL) project directories; restore the last
   session and open file; sessions live in a collapsible sidebar
   (collapse state remembered per project), are auto-named from chat
-  content, and can be deleted from a per-session menu
+  content, and can be deleted from a per-session menu. The projects
+  section grows on hover (up to 80% of the window height) when not
+  all entries fit, easing back when the mouse leaves
 - Slash commands with autocomplete, mapped to their RPC equivalents
 - Shell commands: `!cmd` runs a command in the project directory with
   live-streamed output and adds the result to the model context with
@@ -35,7 +37,10 @@ Features:
   it). Results persist in the session and render after reload
 - Project file browser with markdown (incl. working in-page anchor
   links), HTML, and image preview, git status badges, an in-file
-  git diff view (full file, changed lines highlighted), download, and delete
+  git diff view (full file, changed lines highlighted), download, and
+  delete. The browser pane expands on hover to fit its entries
+  (re-measured on directory change, max 80% of the window height)
+  and eases back when the mouse leaves
 - Text edit mode for the file viewer: syntax-highlighted editor
   (highlighted underlay + transparent textarea) with Ctrl+S save, Esc
   quit, and optimistic concurrency against agent-side edits — a save

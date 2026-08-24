@@ -1359,7 +1359,8 @@ select {
 /* ---------- file browser ---------- */
 
 .browser {
-  height: 25%; /* fallback; overridden inline by the draggable splitter */
+  height: 25%; /* fallback; overridden inline by the splitter ratio
+                   or the hover-expand px height */
   display: flex;
   flex-direction: column;
   min-height: 0;

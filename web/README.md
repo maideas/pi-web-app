@@ -8,7 +8,9 @@ token/cost/context stats, browse/preview/download/delete project files,
 and inspect per-file git diffs as an in-file diff view with changed
 lines highlighted, and edit text files in a syntax-highlighted edit
 mode (transparent textarea over an hljs-rendered underlay) with
-optimistic concurrency against agent-side edits.
+optimistic concurrency against agent-side edits. The projects list
+and the directory browser panes expand on hover to reveal cut-off
+entries (capped at 80% of the window height).
 
 ## Develop
 

@@ -523,7 +523,7 @@
   // Re-measure whenever the browser content changes while hovered:
   // navigating into another directory can add/remove entries, so the
   // expand height must follow the new content. Effects run after the
-  // DOM update, so the scrollHeight is already correct.
+  // DOM update, so the measured content height is already correct.
   $effect(() => {
     dirEntries // track
     browserPath // track
