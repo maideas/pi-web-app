@@ -1823,9 +1823,17 @@
     }
     if (f.path && !f.error) {
       selectedFile = f
-      // Show the file's directory in the browser (also highlights it).
+      // Show the file's directory in the browser (also highlights it)
+      // and scroll the entry into view, so a selected file deep in a
+      // long listing is actually visible after the project switch.
       const dir = f.path.split('/').slice(0, -1).join('/')
-      if (dir) await browse(dir)
+      if (dir) {
+        await browse(dir)
+        await tick()
+        document
+          .querySelector('.browser-body .dirlist .direntry.selected')
+          ?.scrollIntoView({ block: 'nearest' })
+      }
     }
     // Sessions list is sidebar-only: if the pane is visible, load it
     // once the browser is idle (off the switch's critical path); if
