@@ -448,10 +448,17 @@
     }
   }
   // Hover-expand of the projects section: when not all projects are
-  // visible, hovering the section grows it (eased) until everything
-  // fits — capped at 80% of the window height. Leaving collapses it
-  // back to the default 1/3 cap.
+  // visible, resting the mouse on the section for ~300ms grows it
+  // (eased) until everything fits — capped at 80% of the window
+  // height. Leaving collapses it back to the default 1/3 cap.
   let projExpandedMax = $state('') // inline max-height while hovered
+  // Dwell delay: the mouse must rest on the pane this long before it
+  // expands, so a quick pass-through doesn't trigger the effect.
+  let projHoverTimer = 0
+  function scheduleExpandProjects() {
+    clearTimeout(projHoverTimer)
+    projHoverTimer = setTimeout(() => { if (!isMobile) expandProjects() }, 300)
+  }
   // Natural (unstretched) height of a scrolling list's content. The
   // lists are flex children that stretch to fill their pane, so when
   // the content is shorter than the pane, scrollHeight == clientHeight
@@ -469,10 +476,10 @@
   }
 
   function expandProjects() {
-    if (isMobile) return
     const list = document.querySelector('.sb-projects .sb-list')
     const section = document.querySelector('.sb-projects')
     if (!list || !section) return
+    if (isMobile) return
     // header + full list content; independent of any previous
     // expansion (the pane's current height must not feed into the
     // measurement, otherwise repeated expands would over-add)
@@ -486,14 +493,17 @@
     projExpandedMax = `${Math.min(needed, 0.8 * window.innerHeight)}px`
   }
   function collapseProjects() {
+    clearTimeout(projHoverTimer)
     projExpandedMax = ''
   }
 
   // Same hover-expand for the directory browser: when entries are cut
-  // off, hovering grows the pane (eased, max 80% of the window height);
-  // leaving restores the splitter-set ratio height.
+  // off, resting the mouse on the pane for ~300ms grows it (eased,
+  // max 80% of the window height); leaving restores the splitter-set
+  // ratio height.
   let browserExpandedHeight = $state(null) // px while hovered, null = ratio
   let browserHovered = $state(false) // mouse currently over the pane
+  let browserHoverTimer = 0 // dwell timer, like the projects pane
   function expandBrowser() {
     browserHovered = true
     if (isMobile) return
@@ -515,7 +525,12 @@
     }
     browserExpandedHeight = `${Math.min(needed, 0.8 * window.innerHeight)}px`
   }
+  function scheduleExpandBrowser() {
+    clearTimeout(browserHoverTimer)
+    browserHoverTimer = setTimeout(() => { if (!isMobile) expandBrowser() }, 300)
+  }
   function collapseBrowser() {
+    clearTimeout(browserHoverTimer)
     browserHovered = false
     browserExpandedHeight = null
   }
@@ -529,7 +544,6 @@
     browserPath // track
     if (browserHovered) expandBrowser()
   })
-
   function updateFades() {
     ;({ top: fadeTop, bottom: fadeBottom } = fadesFor(editMode ? '.viewer-body .editarea' : '.viewer-body .filecontent'))
     ;({ top: dirFadeTop, bottom: dirFadeBottom } = fadesFor('.browser-body .dirlist'))
@@ -2554,7 +2568,7 @@
            on hover when projects are cut off (max 80% window height).
            Hover is decorative (visual expand only), no ARIA role needed. -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="sb-section sb-projects" style="max-height: {projExpandedMax}" onmouseenter={expandProjects} onmouseleave={collapseProjects}>
+      <div class="sb-section sb-projects" style="max-height: {projExpandedMax}" onmouseenter={scheduleExpandProjects} onmouseleave={collapseProjects}>
       <div class="sidebar-head">
         <span class="sb-title">Projects</span>
         <button class="sb-new" onclick={toggleNewProject} title="New project">add</button>
@@ -2838,7 +2852,7 @@
    <div class="vsplitter" role="separator" aria-orientation="vertical" aria-label="Resize chat/files split" onpointerdown={startChatSplitDrag}></div>
    <aside bind:this={asideEl}>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="browser" style="height: {browserExpandedHeight ?? `${(browserRatio * 100).toFixed(2)}%`}" onmouseenter={expandBrowser} onmouseleave={collapseBrowser}>
+    <div class="browser" style="height: {browserExpandedHeight ?? `${(browserRatio * 100).toFixed(2)}%`}" onmouseenter={scheduleExpandBrowser} onmouseleave={collapseBrowser}>
       <div class="browser-path">
         <div class="head-left">
           <button title="refresh the directory listing" onclick={() => browse(browserPath)}>refresh</button>
