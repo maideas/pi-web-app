@@ -1824,6 +1824,12 @@ select {
   white-space: pre;
 }
 
+/* "wrap" viewer button: soft-wrap long lines instead of horizontal scroll */
+.filecontent.wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Rendered markdown preview in the file viewer: same .md content
    styles as the chat, on the app's default background */
 .filecontent.md {

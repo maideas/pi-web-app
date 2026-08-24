@@ -567,6 +567,7 @@
   // changes, diff === null means error — message in `error`). Cleared
   // whenever another file is shown.
   let diffView = $state(null)
+  let wrapView = $state(false)
   // True while a diff is being fetched/rendered or a file is being
   // loaded into the viewer — shows a centered spinner overlay on the
   // viewer (noticeable on large files).
@@ -2889,6 +2890,7 @@
                 <button class="dl" title="jump to previous diff block" disabled={!diffBlockCount || diffAtFirst} onclick={() => diffGo(-1)}>▲</button>
                 <button class="dl" title="jump to next diff block" disabled={!diffBlockCount || diffAtLast} onclick={() => diffGo(1)}>▼</button>
                 <button class="dl" class:active={diffView} title="toggle in-file diff against git HEAD" disabled={selectedFile.image || selectedFile.text === null} onclick={toggleDiff}>diff view</button>
+                <button class="dl" class:active={wrapView} title="toggle soft-wrapping of long lines" disabled={selectedFile.image || selectedFile.text === null} onclick={() => (wrapView = !wrapView)}>wrap</button>
               </span>
               <span class="file-actions">
                 <button class="dl" title="edit file" disabled={selectedFile.image || selectedFile.text === null || !!diffView || editSwitching} onclick={enterEdit}>edit</button>
@@ -2959,7 +2961,7 @@
           {:else if diffMetaOnly}
             <div class="filecontent binary">No content changes against git HEAD — only file metadata changed (e.g. permissions):<pre>{diffView.diff.trim()}</pre></div>
           {:else}
-            <pre class="filecontent diff"><code class="hljs">{@html renderDiff(diffView.diff, diffView.path)}</code></pre>
+            <pre class="filecontent diff" class:wrap={wrapView}><code class="hljs">{@html renderDiff(diffView.diff, diffView.path)}</code></pre>
           {/if}
         {:else if selectedFile}
           {#if selectedFile.image}
@@ -2975,7 +2977,7 @@
               <iframe src={`/raw/${encPath(selectedFile.path)}?v=${selectedFile.v}`} sandbox="allow-scripts allow-forms" title={selectedFile.path}></iframe>
             </div>
           {:else if selectedFile.text !== null}
-            <pre class="filecontent hljs"><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>
+            <pre class="filecontent hljs" class:wrap={wrapView}><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>
           {:else}
             <div class="filecontent binary">No preview ({selectedFile.reason}) — use download.</div>
           {/if}
