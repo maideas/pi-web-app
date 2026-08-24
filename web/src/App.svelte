@@ -385,10 +385,24 @@
   )
   // Shared pointer-drag plumbing for the splitters: `apply` maps a
   // pointer event to the new ratio/width, `key` persists it on release.
+  // While a drag is in progress the hover-expand of the projects pane
+  // and the directory browser is suppressed: the pointer rests inside
+  // those panes during the drag, and an inline expand height would
+  // override the ratio the user is dragging, making it feel stuck.
+  let splitterDragging = $state(false)
   function dragSplit(ev, apply, key) {
     ev.preventDefault()
+    splitterDragging = true
+    // drop any pending/persisting expansion so the drag moves the
+    // pane borders immediately
+    clearTimeout(projHoverTimer)
+    projExpandedMax = ''
+    clearTimeout(browserHoverTimer)
+    browserHovered = false
+    browserExpandedHeight = null
     const move = (e) => apply(e)
     const up = () => {
+      splitterDragging = false
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       const value = { chatRatio, browserRatio, sidebarWidth }[key]
@@ -456,6 +470,7 @@
   // expands, so a quick pass-through doesn't trigger the effect.
   let projHoverTimer = 0
   function scheduleExpandProjects() {
+    if (splitterDragging) return
     clearTimeout(projHoverTimer)
     projHoverTimer = setTimeout(() => { if (!isMobile) expandProjects() }, 300)
   }
@@ -567,6 +582,7 @@
     browserExpandedHeight = `${Math.min(needed, 0.8 * window.innerHeight)}px`
   }
   function scheduleExpandBrowser() {
+    if (splitterDragging) return
     clearTimeout(browserHoverTimer)
     browserHoverTimer = setTimeout(() => { if (!isMobile) expandBrowser() }, 300)
   }
@@ -584,7 +600,7 @@
   $effect(() => {
     dirEntries // track
     browserPath // track
-    if (browserHovered) expandBrowser()
+    if (browserHovered && !splitterDragging) expandBrowser()
   })
   function updateFades() {
     ;({ top: fadeTop, bottom: fadeBottom } = fadesFor(editMode ? '.viewer-body .editarea' : '.viewer-body .filecontent'))
