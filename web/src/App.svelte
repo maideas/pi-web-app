@@ -2523,6 +2523,10 @@
     sessionPrompts = []
     const resp = await apiGet('/messages')
     if (!resp.success) return
+    // Tool arguments live in the assistant message's toolCall blocks —
+    // toolResult messages only carry the output. Index them by call id
+    // so reloaded tool entries show the blue command like live ones do.
+    const argsByCallId = new Map()
     for (const m of resp.data.messages) {
       if (m.role === 'user') {
         const parts = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : (m.content ?? [])
@@ -2535,12 +2539,15 @@
       } else if (m.role === 'assistant') {
         const text = (m.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).join('')
         const thinking = (m.content ?? []).filter((c) => c.type === 'thinking').map((c) => c.thinking).join('')
+        for (const c of m.content ?? []) {
+          if (c.type === 'toolCall' && c.id) argsByCallId.set(c.id, c.arguments ?? {})
+        }
         if (text || thinking) entries.push({ role: 'assistant', text, thinking })
       } else if (m.role === 'toolResult') {
         entries.push({
           role: 'tool',
           name: m.toolName,
-          args: {},
+          args: argsByCallId.get(m.toolCallId) ?? {},
           output: (m.content ?? []).map((c) => c.text ?? '').join(''),
           done: true,
           isError: !!m.isError,
