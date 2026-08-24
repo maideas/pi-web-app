@@ -445,8 +445,6 @@
   // scrolled out of view.
   let fadeTop = $state(false)
   let fadeBottom = $state(false)
-  let dirFadeTop = $state(false)
-  let dirFadeBottom = $state(false)
   let chatFadeTop = $state(false)
   let chatFadeBottom = $state(false)
   let projFadeTop = $state(false)
@@ -604,7 +602,6 @@
   })
   function updateFades() {
     ;({ top: fadeTop, bottom: fadeBottom } = fadesFor(editMode ? '.viewer-body .editarea' : '.viewer-body .filecontent'))
-    ;({ top: dirFadeTop, bottom: dirFadeBottom } = fadesFor('.browser-body .dirlist'))
     ;({ top: chatFadeTop, bottom: chatFadeBottom } = fadesFor('.chat-body .chat'))
     ;({ top: projFadeTop, bottom: projFadeBottom } = fadesFor('.sb-projects .sb-list'))
     ;({ top: sessFadeTop, bottom: sessFadeBottom } = fadesFor('.sb-sessions .sb-list'))
@@ -2929,8 +2926,6 @@
         </div>
       </div>
       <div class="browser-body" onscrollcapture={updateFades}>
-        <div class="fade fade-top" class:visible={dirFadeTop}></div>
-        <div class="fade fade-bottom" class:visible={dirFadeBottom && browserExpandedHeight === null}></div>
         <div class="dirlist">
           {#if browserParent !== null}
             <button class="direntry" onclick={() => browse(browserParent)}>
