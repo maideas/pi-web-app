@@ -447,6 +447,89 @@
       bottom: el.scrollHeight - el.scrollTop - el.clientHeight > 8,
     }
   }
+  // Hover-expand of the projects section: when not all projects are
+  // visible, hovering the section grows it (eased) until everything
+  // fits — capped at 80% of the window height. Leaving collapses it
+  // back to the default 1/3 cap.
+  let projExpandedMax = $state('') // inline max-height while hovered
+  // Natural (unstretched) height of a scrolling list's content. The
+  // lists are flex children that stretch to fill their pane, so when
+  // the content is shorter than the pane, scrollHeight == clientHeight
+  // (the stretched height) — useless for computing a shrink target.
+  // Instead sum the children's boxes (offsetTop is relative to the
+  // same positioned ancestor for list and children alike).
+  function listContentHeight(list) {
+    let h = 0
+    for (const c of list.children) {
+      const cs = getComputedStyle(c)
+      h = Math.max(h, c.offsetTop + c.offsetHeight + parseFloat(cs.marginBottom || '0'))
+    }
+    const cs = getComputedStyle(list)
+    return h + parseFloat(cs.paddingTop || '0') + parseFloat(cs.paddingBottom || '0')
+  }
+
+  function expandProjects() {
+    if (isMobile) return
+    const list = document.querySelector('.sb-projects .sb-list')
+    const section = document.querySelector('.sb-projects')
+    if (!list || !section) return
+    // header + full list content; independent of any previous
+    // expansion (the pane's current height must not feed into the
+    // measurement, otherwise repeated expands would over-add)
+    const needed = section.offsetHeight - list.clientHeight + listContentHeight(list)
+    const defaultMax = window.innerHeight / 3 // the CSS 33.33vh cap
+    if (needed <= defaultMax + 1) {
+      // default cap already shows everything — drop the inline value
+      projExpandedMax = ''
+      return
+    }
+    projExpandedMax = `${Math.min(needed, 0.8 * window.innerHeight)}px`
+  }
+  function collapseProjects() {
+    projExpandedMax = ''
+  }
+
+  // Same hover-expand for the directory browser: when entries are cut
+  // off, hovering grows the pane (eased, max 80% of the window height);
+  // leaving restores the splitter-set ratio height.
+  let browserExpandedHeight = $state(null) // px while hovered, null = ratio
+  let browserHovered = $state(false) // mouse currently over the pane
+  function expandBrowser() {
+    browserHovered = true
+    if (isMobile) return
+    const list = document.querySelector('.browser-body .dirlist')
+    const pane = document.querySelector('.browser')
+    if (!list || !pane || !pane.parentElement) return
+    // header + path bar + full list content; independent of any
+    // previous expansion (measuring pane.offsetHeight + overflow would
+    // over-add when the pane is already expanded)
+    const needed = pane.offsetHeight - list.clientHeight + listContentHeight(list)
+    // the splitter-set ratio height: .browser height is a % of the
+    // aside it sits in — that default, NOT the currently expanded
+    // height, decides whether expanding is needed at all
+    const defaultH = pane.parentElement.clientHeight * browserRatio
+    if (needed <= defaultH + 1) {
+      // ratio height already shows everything — back to it
+      browserExpandedHeight = null
+      return
+    }
+    browserExpandedHeight = `${Math.min(needed, 0.8 * window.innerHeight)}px`
+  }
+  function collapseBrowser() {
+    browserHovered = false
+    browserExpandedHeight = null
+  }
+
+  // Re-measure whenever the browser content changes while hovered:
+  // navigating into another directory can add/remove entries, so the
+  // expand height must follow the new content. Effects run after the
+  // DOM update, so the scrollHeight is already correct.
+  $effect(() => {
+    dirEntries // track
+    browserPath // track
+    if (browserHovered) expandBrowser()
+  })
+
   function updateFades() {
     ;({ top: fadeTop, bottom: fadeBottom } = fadesFor(editMode ? '.viewer-body .editarea' : '.viewer-body .filecontent'))
     ;({ top: dirFadeTop, bottom: dirFadeBottom } = fadesFor('.browser-body .dirlist'))
@@ -2466,15 +2549,18 @@
           </div>
         </div>
       {/if}
-      <!-- Projects section: capped at 1/3 of the window height -->
-      <div class="sb-section sb-projects">
+      <!-- Projects section: capped at 1/3 of the window height; grows
+           on hover when projects are cut off (max 80% window height).
+           Hover is decorative (visual expand only), no ARIA role needed. -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="sb-section sb-projects" style="max-height: {projExpandedMax}" onmouseenter={expandProjects} onmouseleave={collapseProjects}>
       <div class="sidebar-head">
         <span class="sb-title">Projects</span>
         <button class="sb-new" onclick={toggleNewProject} title="New project">add</button>
       </div>
       <div class="sb-scroll" onscrollcapture={updateFades}>
       <div class="fade fade-top" class:visible={projFadeTop}></div>
-      <div class="fade fade-bottom" class:visible={projFadeBottom}></div>
+      <div class="fade fade-bottom" class:visible={projFadeBottom && projExpandedMax === ''}></div>
       <div class="sb-list">
         {#each projects as p (p.id)}
           <div class="sb-item" class:current={p.current} class:outside={p.outsideWorkspace}>
@@ -2750,7 +2836,8 @@
 
    <div class="vsplitter" role="separator" aria-orientation="vertical" aria-label="Resize chat/files split" onpointerdown={startChatSplitDrag}></div>
    <aside bind:this={asideEl}>
-    <div class="browser" style="height: {(browserRatio * 100).toFixed(2)}%">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="browser" style="height: {browserExpandedHeight ?? `${(browserRatio * 100).toFixed(2)}%`}" onmouseenter={expandBrowser} onmouseleave={collapseBrowser}>
       <div class="browser-path">
         <div class="head-left">
           <button title="refresh the directory listing" onclick={() => browse(browserPath)}>refresh</button>
@@ -2764,7 +2851,7 @@
       </div>
       <div class="browser-body" onscrollcapture={updateFades}>
         <div class="fade fade-top" class:visible={dirFadeTop}></div>
-        <div class="fade fade-bottom" class:visible={dirFadeBottom}></div>
+        <div class="fade fade-bottom" class:visible={dirFadeBottom && browserExpandedHeight === null}></div>
         <div class="dirlist">
           {#if browserParent !== null}
             <button class="direntry" onclick={() => browse(browserParent)}>

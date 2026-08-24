@@ -218,6 +218,8 @@ main {
   flex: 0 1 auto;
   max-height: 33.33vh;
   border-bottom: 1px solid var(--border);
+  /* hover-expand (see expandProjects) animates this inline */
+  transition: max-height 0.25s ease;
 }
 
 .sb-section.sb-sessions {
@@ -1365,6 +1367,8 @@ select {
   /* inherits the default text font (the global button rule passes it
      through to the directory entries) */
   font-size: 1rem;
+  /* hover-expand (see expandBrowser) animates the inline height */
+  transition: height 0.25s ease;
 }
 
 .browser-path {
