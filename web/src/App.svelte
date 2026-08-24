@@ -1809,6 +1809,11 @@
     loadPromptHistory() // per session; needs currentSessionPath (set by refreshState)
     mergeSessionPrompts() // seed recall from the resumed session's prompts
     loadSidebarState() // sidebar collapse state is per project too
+    // The current project can sit below the fold of the (collapsed)
+    // projects pane — scroll it into view, on app start and on every
+    // project switch alike. Wait a tick for the list to render.
+    await tick()
+    keepSelectedVisible('.sb-projects .sb-list', '.sb-item.current')
     // Restore the project's remembered viewer file, README as fallback.
     const remembered = projects.find((p) => p.current)?.lastFile ?? 'README.md'
     viewerLoading = true
