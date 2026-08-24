@@ -480,6 +480,7 @@
     const section = document.querySelector('.sb-projects')
     if (!list || !section) return
     if (isMobile) return
+    keepVisibleSel = null // hovering again ends the post-collapse watch
     // header + full list content; independent of any previous
     // expansion (the pane's current height must not feed into the
     // measurement, otherwise repeated expands would over-add)
@@ -492,9 +493,48 @@
     }
     projExpandedMax = `${Math.min(needed, 0.8 * window.innerHeight)}px`
   }
+  // After a pane collapses (250ms eased transition), make sure the
+  // selected item is still within the shrunken viewport: if it got cut
+  // off by the shrink, scroll the least amount that brings it back.
+  function keepSelectedVisible(listSel, itemSel) {
+    const list = document.querySelector(listSel)
+    const item = list?.querySelector(itemSel)
+    if (!list || !item) return
+    const lr = list.getBoundingClientRect()
+    const ir = item.getBoundingClientRect()
+    if (ir.top < lr.top) list.scrollTop -= lr.top - ir.top
+    else if (ir.bottom > lr.bottom) list.scrollTop += ir.bottom - lr.bottom
+  }
+  // Track the collapse so the item stays pinned while the pane shrinks:
+  // a one-shot check after the nominal 250ms can fire mid-transition on
+  // a busy machine (heavy layout, long lists), after which the pane
+  // keeps shrinking and cuts the item off again. Instead re-check every
+  // frame and stop early once the collapse has surely finished AND the
+  // selected item is inside the viewport — but keep watching for a while
+  // (3s) even after a "good" frame, because selecting a project switches
+  // the backend state and the .current class can move to the newly
+  // clicked item only after that reload lands, well after the collapse.
+  let keepVisibleRaf = 0
+  let keepVisibleUntil = 0
+  let keepVisibleSel = null // [listSel, itemSel] from the last collapse
+  function trackSelectedDuringCollapse(listSel, itemSel) {
+    keepVisibleSel = [listSel, itemSel]
+    keepVisibleUntil = performance.now() + 3000
+    if (keepVisibleRaf) return // already tracking
+    const step = () => {
+      if (keepVisibleSel) keepSelectedVisible(keepVisibleSel[0], keepVisibleSel[1])
+      if (performance.now() >= keepVisibleUntil) {
+        keepVisibleRaf = 0
+        return
+      }
+      keepVisibleRaf = requestAnimationFrame(step)
+    }
+    keepVisibleRaf = requestAnimationFrame(step)
+  }
   function collapseProjects() {
     clearTimeout(projHoverTimer)
     projExpandedMax = ''
+    trackSelectedDuringCollapse('.sb-projects .sb-list', '.sb-item.current')
   }
 
   // Same hover-expand for the directory browser: when entries are cut
@@ -507,6 +547,7 @@
   function expandBrowser() {
     browserHovered = true
     if (isMobile) return
+    keepVisibleSel = null // hovering again ends the post-collapse watch
     const list = document.querySelector('.browser-body .dirlist')
     const pane = document.querySelector('.browser')
     if (!list || !pane || !pane.parentElement) return
@@ -533,6 +574,7 @@
     clearTimeout(browserHoverTimer)
     browserHovered = false
     browserExpandedHeight = null
+    trackSelectedDuringCollapse('.browser-body .dirlist', '.direntry.selected')
   }
 
   // Re-measure whenever the browser content changes while hovered:
@@ -1655,6 +1697,12 @@
     const resp = await apiGet('/api/projects')
     projects = resp.projects ?? []
     currentProjectId = projects.find((p) => p.current)?.id ?? ''
+    // A project click while the pane was hovered collapses the pane on
+    // mouse-leave; the .current class lands on the newly selected item
+    // only here, when the reload returns — potentially seconds later,
+    // after the collapse tracker already gave up. If a collapse
+    // happened recently, make the (new) selection visible now.
+    if (keepVisibleSel) keepSelectedVisible(keepVisibleSel[0], keepVisibleSel[1])
   }
 
   // Full (re)initialization: after mount, a project switch, or a
