@@ -36,10 +36,15 @@ frontend notes.
   commands) at subprocess startup; newly added templates only appear
   after a restart.
 - If the pi subprocess dies unexpectedly, `pi()` in [app.py](app.py)
-  respawns it on the next request and resumes the latest session. After
-  a project switch, every browser tab must reconnect its SSE stream —
+  respawns it on the next request and resumes the latest session. The
+  reader thread broadcasts a `pi_exited` event to all SSE subscribers
+  first, so every tab reconnects its stream (reconnecting is what
+  triggers the respawn) and reloads its state; waiting RPC calls fail
+  with `"pi process exited"` instead of timing out. After a project
+  switch, every browser tab must reconnect its SSE stream —
   the initiating tab does this explicitly, other tabs via the
-  `project_switched` event.
+  `project_switched` event (the intentional stop suppresses
+  `pi_exited`).
 
 ## pi RPC facts learned the hard way
 

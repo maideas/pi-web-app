@@ -26,6 +26,7 @@ import stat
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -75,13 +76,18 @@ def _lan_ip() -> str:
 
 
 class DynamicTrustedHosts:
-    """Dynamically resolve trusted Host headers on each request.
+    """Dynamically resolve trusted Host headers, cached for a short TTL.
 
     Re-evaluates local LAN IPs and hostnames so DHCP IP renewals or
     multi-homed setups don't cause 400 Bad Request while still rejecting
     DNS-rebinding attacks from external hostnames. Independent of the
     bind address: it filters requests that already arrived, so the local
     names are trusted regardless of what HOST binds to.
+
+    Flask evaluates TRUSTED_HOSTS on every request, and resolving the
+    set involves DNS lookups (getfqdn/gethostbyname_ex can block for
+    seconds on hosts with slow or broken reverse DNS) — so the set is
+    cached and only rebuilt after TTL seconds instead of per request.
 
     Names this host cannot discover itself must be listed in
     PI_WEB_TRUSTED_HOSTS (comma-separated). Typical case: a
@@ -91,7 +97,14 @@ class DynamicTrustedHosts:
     dot matches all subdomains (".example.lan").
     """
 
-    def __iter__(self):
+    TTL = 60.0  # seconds; short enough to track DHCP renewals
+
+    def __init__(self):
+        self._hosts: set[str] | None = None
+        self._expires = 0.0
+        self._lock = threading.Lock()
+
+    def _resolve(self) -> set[str]:
         hosts = {"127.0.0.1", "localhost", "::1"}
         for extra in os.environ.get("PI_WEB_TRUSTED_HOSTS", "").split(","):
             if extra.strip():
@@ -109,7 +122,15 @@ class DynamicTrustedHosts:
         bind_host = os.environ.get("HOST")
         if bind_host and bind_host not in ("0.0.0.0", "::"):
             hosts.add(bind_host)
-        return iter(hosts)
+        return hosts
+
+    def __iter__(self):
+        now = time.monotonic()
+        with self._lock:
+            if self._hosts is None or now >= self._expires:
+                self._hosts = self._resolve()
+                self._expires = now + self.TTL
+            return iter(self._hosts)
 
 
 # Reject requests whose Host header is not a local name or a local IP:
@@ -153,6 +174,10 @@ class PiProcess:
         # Pending command responses, keyed by command id.
         self.pending: dict[str, queue.Queue] = {}
         self.pending_lock = threading.Lock()
+        # Set by stop() for intentional termination: the reader then
+        # skips the pi_exited broadcast (switch flows notify tabs
+        # themselves).
+        self.stopped = False
         threading.Thread(target=self._reader, daemon=True).start()
 
     def is_alive(self) -> bool:
@@ -278,6 +303,10 @@ class PiProcess:
 
     def stop(self) -> None:
         """Terminate the subprocess; the reader thread exits on EOF."""
+        # Mark as intentional *before* terminating, so the reader (which
+        # notices the death up to ~2 s later) doesn't broadcast pi_exited
+        # on top of the switch flow's own project_switched event.
+        self.stopped = True
         try:
             self.proc.terminate()
             self.proc.wait(timeout=2.0)
@@ -294,8 +323,6 @@ class PiProcess:
 
     def _reader(self) -> None:
         """Read JSONL events from pi stdout. Split on \\n only (strict JSONL)."""
-        import time
-
         while self.proc.poll() is None:
             try:
                 for line in self.proc.stdout:
@@ -321,7 +348,30 @@ class PiProcess:
             except Exception:
                 log.exception("reader thread error")
             time.sleep(0.2)
-        # Process is gone: release the pipe fd (GC would get it eventually).
+        # Process is gone. Fail all waiting RPC callers right away
+        # instead of letting them run into their full timeout, and tell
+        # the SSE subscribers: their stream is attached to this (now
+        # dead) process and would otherwise keep looking alive via the
+        # 15 s keepalives. Reconnecting hits /events, whose pi() call
+        # respawns the process and resumes the latest session.
+        # Suppressed for an intentional stop(): those flows (project
+        # switch) broadcast their own event and the tabs reconnect on
+        # that.
+        with self.pending_lock:
+            waiters = list(self.pending.items())
+            self.pending.clear()
+        for cmd_id, q in waiters:
+            q.put(
+                {
+                    "success": False,
+                    "error": "pi process exited",
+                    "type": "response",
+                    "id": cmd_id,
+                }
+            )
+        if not self.stopped:
+            self.broadcast({"type": "pi_exited"})
+        # Release the pipe fd (GC would get it eventually).
         try:
             self.proc.stdout.close()
         except OSError:
@@ -1041,14 +1091,22 @@ GIT_URL_RE = re.compile(r"^(https?|git|ssh)://|^git@[\w.-]+:")
 
 
 def register_project(p: Path):
-    """Add an existing directory to the registry (id-checked)."""
-    projects = load_projects()
-    for existing in projects:
-        if existing["path"] == str(p):
-            return jsonify({"success": False, "error": "already registered"}), 409
-    entry = new_project_entry(p)
-    projects.append(entry)
-    save_projects(projects)
+    """Add an existing directory to the registry (id-checked).
+
+    Serialized via switch_lock like the other registry writers, so a
+    registration racing a session switch or a lastSession/lastFile
+    write can't drop either side's update (last-writer-wins on the
+    whole file). No caller holds the lock (the git clone in
+    create_project runs outside it).
+    """
+    with switch_lock:
+        projects = load_projects()
+        for existing in projects:
+            if existing["path"] == str(p):
+                return jsonify({"success": False, "error": "already registered"}), 409
+        entry = new_project_entry(p)
+        projects.append(entry)
+        save_projects(projects)
     return jsonify({"success": True, "project": entry})
 
 
@@ -1309,6 +1367,8 @@ def safe_path(rel: str) -> Path:
     Defense-in-depth: also rejects a project root that itself escaped
     the workspace (bad registry entry via some future code path).
     """
+    if not isinstance(rel, str):
+        http_abort(400)  # e.g. {"path": 123} must not 500 in lstrip
     root = project_root().resolve()
     if not contained(root):
         http_abort(403)

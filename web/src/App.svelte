@@ -1142,9 +1142,20 @@
 
   async function browse(path) {
     const resp = await apiGet(`/api/list?path=${encodeURIComponent(path)}`)
+    if (!resp.entries) {
+      // 404: the directory is gone — fall back to the project root.
+      // Transient failures (network error, 500): keep the current
+      // listing instead of silently wiping the browser pane.
+      if (resp.status === 404 && path) return browse('')
+      if (path) return
+      browserPath = ''
+      browserParent = null
+      dirEntries = []
+      return
+    }
     browserPath = resp.path ?? ''
     browserParent = resp.parent ?? null
-    dirEntries = resp.entries ?? []
+    dirEntries = resp.entries
   }
 
   // Link clicks inside rendered markdown (chat and file viewer).
@@ -1390,8 +1401,13 @@
   async function refreshFiles() {
     const list = await apiGet(`/api/list?path=${encodeURIComponent(browserPath)}`)
     if (!list.entries) {
-      selectedFile = null
-      await browse('')
+      // Directory gone: fall back to the project root. Transient
+      // failures (network error, 500) keep the current listing and
+      // viewer state instead of discarding them.
+      if (list.status === 404) {
+        selectedFile = null
+        await browse('')
+      }
       return
     }
     browserPath = list.path ?? ''
@@ -1406,10 +1422,15 @@
         viewerLoading = false
       }
       if (f.error) {
-        if (editMode) editConflict = 'gone' // draft kept; banner offers discard
-        selectedFile = null
-        diffView = null
-        await browse('')
+        // 404: the file really is gone — clear the viewer (and keep the
+        // edit draft with a conflict banner). Transient failures keep
+        // the current state.
+        if (f.status === 404) {
+          if (editMode) editConflict = 'gone' // draft kept; banner offers discard
+          selectedFile = null
+          diffView = null
+          await browse('')
+        }
       } else {
         selectedFile = f
         syncEditBase(f) // reconcile an open edit buffer with the disk content
@@ -1632,13 +1653,17 @@
   }
 
   async function apiGet(url) {
+    let status = 0
     try {
       const r = await fetch(url)
+      status = r.status
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       return await r.json()
     } catch (err) {
       console.error('GET', url, err)
-      return { success: false, error: err.message }
+      // status lets callers distinguish "gone" (404) from transient
+      // failures (0 = network error) instead of resetting state blindly
+      return { success: false, status, error: err.message }
     }
   }
 
@@ -1755,6 +1780,10 @@
     attachments = []
     sessions = []
     sessionsLoaded = false
+    // The stream this UI tracked is gone (project switch, pi exit,
+    // overflow reconnect); a fresh agent_start re-enables it when a run
+    // is actually active on the new stream.
+    streaming = false
     if (editMode) {
       // The project's pi process is already gone; saving the draft is
       // impossible (paths are confined to the new project root).
@@ -2197,6 +2226,17 @@
           role: 'system',
           text: `⇄ switched to project “${ev.project?.name ?? '?'}”`,
         })
+        reconnectEvents()
+        reinit()
+        break
+
+      case 'pi_exited':
+        // The pi subprocess died unexpectedly (crash, kill): the server
+        // respawns it on the next request, but our SSE stream is still
+        // attached to the dead process — reconnect (the new /events
+        // subscription triggers the respawn and session resume) and
+        // reload all state, or the UI would freeze silently.
+        console.warn('pi process exited; reconnecting')
         reconnectEvents()
         reinit()
         break

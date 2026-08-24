@@ -102,7 +102,8 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 - The Flask app spawns `pi --mode rpc` at startup (in the most recently
   opened project's directory). If the pi process dies unexpectedly, it is
   respawned automatically on the next request and resumes the latest
-  session. A reader thread parses
+  session; connected tabs are notified via a `pi_exited` SSE event and
+  reconnect on their own. A reader thread parses
   pi's stdout, routes correlated command responses to waiting HTTP handlers
   (request/response correlation via UUIDs), and broadcasts all other events
   to SSE subscribers.
@@ -125,7 +126,6 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/jsconfig.json`](web/jsconfig.json) | JS type-checking config (checkJs) for the frontend |
 | [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, dompurify, highlight.js, github-slugger) |
 | [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
-| [`doc/brainstorming-about-project-handling.md`](doc/brainstorming-about-project-handling.md) | Design notes and decisions for multi-project support (registry/switch/clone/detach increments implemented; process pool still open) |
 | [`doc/theme-preview.md`](doc/theme-preview.md) | Demo document for comparing the themes in the file viewer |
 | [`LICENSE`](LICENSE) | License |
 | [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask, python-dotenv) |
@@ -192,14 +192,15 @@ File browser and static hosting:
 | `/api/list?path=` | GET | List a directory under the project root |
 | `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB) |
 | `/api/diff?path=` | GET | Full-context git diff (`-U…`) for one file (worktree vs HEAD; untracked vs /dev/null), rendered by the frontend as an in-file diff with changed lines highlighted |
-| `/api/file/delete` | POST | Delete a file under the project root |
+| `/api/file/delete` | POST | Delete a file (or directory tree) under the project root |
+| `/api/file/create` | POST | Create an empty file or directory under the project root (409 if it already exists) |
 | `/api/file/save` | POST | Save file content from edit mode (atomic write, permission-preserving; rejects with `conflict: true` when the disk content no longer matches the client's `base`, unless `force`) |
 | `/raw/<path>` | GET | Serve a file inline (image/HTML preview; nosniff + CSP sandbox) |
 | `/download/<path>` | GET | Download a file |
 | `/` | GET | Serve the built SPA from `web/dist/` |
 
 Paths for `/api/list`, `/api/file`, `/api/diff`, `/api/file/delete`,
-`/api/file/save`, `/raw/*`, and `/download/*` are confined to
+`/api/file/create`, `/api/file/save`, `/raw/*`, and `/download/*` are confined to
 the current project's root, which itself must lie inside the workspace
 root (traversal attempts get 403; symlinks are resolved before the
 containment check). POST endpoints require an
