@@ -1125,6 +1125,16 @@ aside {
   color: var(--link);
 }
 
+/* Tool-argument summary (blue command line): wraps like the live
+   !cmd bash summaries (no nowrap/ellipsis — long commands fold onto
+   multiple lines inside the tool box). */
+.msg.tool summary code.tool-args {
+  display: inline;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  vertical-align: bottom;
+}
+
 /* Cream theme: --link is the brownish rust, but tool-call commands
    read better in the light theme's blue */
 :root[data-theme='light'][data-contrast='cream'] .msg.tool code {

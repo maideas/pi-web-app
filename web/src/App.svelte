@@ -1553,6 +1553,74 @@
     return t.length > n ? t.slice(0, n) + '…' : t
   }
 
+  // One-line argument summary for a tool entry, shown in the blue
+  // command style next to the tool name (same for live and reloaded
+  // entries — args shape is identical). Mirrors pi's own TUI call
+  // renderers: path plus the one or two defining arguments. Returns ''
+  // when there is nothing worth showing (unknown tool, no args).
+  function toolSummary(entry) {
+    const args = entry?.args
+    if (!args || typeof args !== 'object') return ''
+    const project = projects.find((p) => p.current)?.path ?? ''
+    const shorten = (p) => {
+      const s = String(p ?? '')
+      if (project && s.startsWith(project + '/')) return s.slice(project.length + 1)
+      return s
+    }
+    const path = (v) => (typeof v === 'string' && v.trim() ? shorten(v) : '')
+    switch (entry.name) {
+      case 'bash':
+        return truncate(args.command, 160)
+      case 'read': {
+        let s = path(args.path)
+        if (args.offset !== undefined || args.limit !== undefined) {
+          const start = args.offset ?? 1
+          const end = args.limit !== undefined ? start + args.limit - 1 : ''
+          s += `:${start}${end !== '' ? `-${end}` : ''}`
+        }
+        return s
+      }
+      case 'edit': {
+        const n = Array.isArray(args.edits) ? args.edits.length : 0
+        return `${path(args.path)}${n ? ` · ${n} edit${n > 1 ? 's' : ''}` : ''}`
+      }
+      case 'write': {
+        const size = typeof args.content === 'string' ? args.content.length : 0
+        return `${path(args.path)}${size ? ` · ${formatBytes(size)}` : ''}`
+      }
+      case 'grep': {
+        if (!args.pattern) return ''
+        let s = truncate(String(args.pattern), 100)
+        const scope = path(args.path) || (args.glob ? `--glob ${args.glob}` : '')
+        if (scope) s += `  ${scope}`
+        return s
+      }
+      case 'find': {
+        if (!args.pattern) return ''
+        let s = truncate(String(args.pattern), 100)
+        if (args.path) s += `  ${path(args.path)}`
+        return s
+      }
+      case 'ls':
+        return path(args.path)
+      default: {
+        // Unknown/extension tools: show the first of the usual suspect
+        // fields so the summary stays useful without per-tool knowledge.
+        for (const k of ['command', 'path', 'pattern', 'query', 'url']) {
+          const v = args[k]
+          if (typeof v === 'string' && v.trim()) return truncate(v, 160)
+        }
+        return ''
+      }
+    }
+  }
+
+  function formatBytes(n) {
+    if (n < 1024) return `${n} B`
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} kB`
+    return `${(n / 1024 / 1024).toFixed(1)} MB`
+  }
+
   // Copy text to the clipboard with a brief ✓ feedback on the button.
   // navigator.clipboard needs a secure context (localhost qualifies);
   // fall back to the legacy execCommand path elsewhere.
@@ -2951,7 +3019,7 @@
         <details class="msg tool" class:error={entry.isError} class:ok={entry.done && !entry.isError} open={!isMobile}>
           <summary>
             🔧 {entry.name}
-            {#if entry.args?.command}<code>{entry.args.command}</code>{/if}
+            {#if toolSummary(entry)}<code class="tool-args" title={toolSummary(entry)}>{toolSummary(entry)}</code>{/if}
             {#if !entry.done}<span class="spinner">…</span>{/if}
             {#if entry.isError}❌{/if}
           </summary>
