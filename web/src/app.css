@@ -2342,3 +2342,18 @@ select {
     min-width: 0;
   }
 }
+
+/* "load earlier messages" pill at the top of a lazily-windowed chat */
+.msg.older {
+  align-self: center;
+  background: none;
+  border: 1px dashed var(--sys-border);
+  color: var(--sys-fg);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.9rem;
+  border-radius: 999px;
+}
+.msg.older:hover {
+  background: var(--sys-bg);
+}

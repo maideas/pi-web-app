@@ -184,6 +184,13 @@
 
   // Chat entries: { role: 'user'|'assistant'|'system', text, thinking?, images? } | { role: 'tool', ... }
   let entries = $state([])
+  // Lazy chat history: only the last CHAT_PAGE entries are rendered
+  // after a history load (markdown + highlight.js per message is the
+  // dominant cost on big sessions); hiddenCount counts the leading
+  // entries left out. Grows while streaming; trimmed again on the next
+  // loadHistory().
+  const CHAT_PAGE = 50
+  let hiddenCount = $state(0)
   let input = $state('')
   let streaming = $state(false)
   let chatEl
@@ -232,6 +239,7 @@
   function setMobileView(v) {
     mobileView = v
     mobileMenuOpen = false
+    if (v === 'sessions') ensureSessionsLoaded()
     tick().then(updateFades)
   }
 
@@ -244,6 +252,7 @@
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed
     localStorage.setItem(sidebarKey(), sidebarCollapsed ? '1' : '0')
+    if (!sidebarCollapsed) ensureSessionsLoaded()
   }
 
   // The ⋯ popup is anchored below its row inside the sidebar's scroll
@@ -1499,8 +1508,14 @@
     clearTimeout(msgNavTimer)
     showMsgNav = false
   }
-  function jumpToMessage(i) {
+  async function jumpToMessage(i) {
     closeMsgNav()
+    // Target may be outside the rendered window — reveal enough of
+    // the history first, then scroll once it exists in the DOM.
+    if (i < hiddenCount) {
+      hiddenCount = Math.max(0, i - CHAT_PAGE)
+      await tick()
+    }
     document
       .querySelector(`.msg.user[data-idx="${i}"]`)
       ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
@@ -1654,6 +1669,9 @@
     if (!resp.success) return
     currentModel = resp.data.model
     thinkingLevel = resp.data.thinkingLevel
+    // The active session path comes cheaply with /state; the sessions
+    // list itself is loaded lazily (see ensureSessionsLoaded).
+    if (resp.data.sessionFile) currentSessionPath = resp.data.sessionFile
     const levels = await apiGet('/thinking_levels')
     if (levels.success) thinkingLevels = levels.data.levels
   }
@@ -1682,11 +1700,22 @@
   // Guard against out-of-order responses: only the latest request may
   // update the sessions list / current marker.
   let sessionsReq = 0
+  // Lazy sessions pane: the list is sidebar-only and /sessions scans
+  // session files (name resolution) — don't load it on the critical
+  // path of a project switch. Loaded when the pane becomes visible
+  // (sidebar expand / mobile sessions view) or, if it already is
+  // visible, when the browser goes idle after the switch.
+  let sessionsLoaded = $state(false)
+  function ensureSessionsLoaded() {
+    if (sessionsLoaded) return
+    return refreshSessions()
+  }
   async function refreshSessions() {
     const id = ++sessionsReq
     const resp = await apiGet('/sessions')
     if (id !== sessionsReq) return
     sessions = resp.sessions ?? []
+    sessionsLoaded = true
     currentSessionPath = sessions.find((s) => s.current)?.path ?? ''
   }
 
@@ -1722,7 +1751,10 @@
   // project_switched event from another tab.
   async function reinit() {
     entries = []
+    hiddenCount = 0
     attachments = []
+    sessions = []
+    sessionsLoaded = false
     if (editMode) {
       // The project's pi process is already gone; saving the draft is
       // impossible (paths are confined to the new project root).
@@ -1742,11 +1774,10 @@
       refreshState(),
       refreshModels(),
       refreshStats(),
-      refreshSessions(),
       loadCommands(),
       loadProjects(),
     ])
-    loadPromptHistory() // per session; needs currentSessionPath from refreshSessions
+    loadPromptHistory() // per session; needs currentSessionPath (set by refreshState)
     mergeSessionPrompts() // seed recall from the resumed session's prompts
     loadSidebarState() // sidebar collapse state is per project too
     // Restore the project's remembered viewer file, README as fallback.
@@ -1766,6 +1797,13 @@
       // Show the file's directory in the browser (also highlights it).
       const dir = f.path.split('/').slice(0, -1).join('/')
       if (dir) await browse(dir)
+    }
+    // Sessions list is sidebar-only: if the pane is visible, load it
+    // once the browser is idle (off the switch's critical path); if
+    // not, the sidebar-expand / mobile-view triggers load it on demand.
+    if (!isMobile && !sidebarCollapsed) {
+      const ric = window.requestIdleCallback ?? ((f) => setTimeout(f, 200))
+      ric(() => ensureSessionsLoaded())
     }
   }
 
@@ -1813,7 +1851,9 @@
     entries = [
       { role: 'system', text: `✖ project “${name}” was detached — select a project on the left or create a new one` },
     ]
+    hiddenCount = 0
     sessions = []
+    sessionsLoaded = true // nothing to load while detached: show the empty state
     currentSessionPath = ''
     quitEdit({ force: true }) // no active project, nowhere to save to
     selectedFile = null
@@ -1909,6 +1949,7 @@
     if (resp.success && !resp.data?.cancelled) {
       currentSessionPath = path
       entries = []
+      hiddenCount = 0
       await loadHistory()
       loadPromptHistory()
       mergeSessionPrompts()
@@ -2416,6 +2457,7 @@
     if (noProject) return
     await apiPost('/new_session')
     entries = []
+    hiddenCount = 0
     sessionPrompts = [] // no loadHistory here; drop the old session's prompts
     await refreshSessions()
     loadPromptHistory() // re-key to the fresh session
@@ -2466,7 +2508,36 @@
         })
       }
     }
+    hiddenCount = Math.max(0, entries.length - CHAT_PAGE)
     scrollToBottom(true) // history (re)load: start at the end
+  }
+
+  // Reveal one more page of history, keeping the viewport anchored on
+  // the message it currently shows at the top. We pin the first
+  // rendered message element (not a height delta): older entries are
+  // inserted above it and the button itself may disappear when the
+  // history is fully revealed — and heights keep shifting after the
+  // DOM update while images decode, so re-pin on the next frames too
+  // (same late-pin scheme as scrollToBottom).
+  async function showOlder() {
+    if (!hiddenCount) return
+    const el = chatEl
+    const anchor = el?.querySelector('.msg:not(.older), .msgrow, details') ?? null
+    const prevTop = anchor?.getBoundingClientRect().top ?? null
+    const prevHeight = el?.scrollHeight ?? 0
+    hiddenCount = Math.max(0, hiddenCount - CHAT_PAGE)
+    await tick()
+    if (!el) return
+    if (anchor?.isConnected && prevTop != null) {
+      const pin = () => {
+        if (anchor.isConnected) el.scrollTop += anchor.getBoundingClientRect().top - prevTop
+      }
+      pin()
+      requestAnimationFrame(pin)
+      setTimeout(pin, 80) // late async growth (image decode etc.)
+    } else {
+      el.scrollTop += el.scrollHeight - prevHeight
+    }
   }
 
   async function loadCommands() {
@@ -2694,7 +2765,7 @@
             {/if}
           </div>
         {:else}
-          <div class="sb-empty">No sessions yet.</div>
+          <div class="sb-empty">{sessionsLoaded ? 'No sessions yet.' : 'Loading sessions…'}</div>
         {/each}
       </div>
       </div>
@@ -2748,12 +2819,17 @@
         <div class="chat-empty-text">pi agent web UI</div>
       </div>
     {/if}
-    {#each entries as entry, i}
+    {#if hiddenCount > 0}
+      <button class="msg older" onclick={showOlder}>
+        load {Math.min(CHAT_PAGE, hiddenCount)} earlier messages ({hiddenCount} hidden)
+      </button>
+    {/if}
+    {#each entries.slice(hiddenCount) as entry, k (hiddenCount + k)}
       {#if entry.role === 'system'}
         <div class="msg system">{entry.text}</div>
       {:else if entry.role === 'user'}
         <div class="msgrow user">
-          <div class="msg user" data-idx={i}>{entry.text}
+          <div class="msg user" data-idx={hiddenCount + k}>{entry.text}
             {#if entry.images?.length}
               <div class="imgs">
                 {#each entry.images as src}
