@@ -1171,10 +1171,11 @@ aside {
   color: #0969da;
 }
 
-/* Dark theme: tool-call commands use the light theme's blue instead of
-   the darker --link, which is hard to read against the panel */
+/* Dark theme: tool-call commands use the same readable blue as
+   dark-mode inline code instead of the darker --link, which is hard
+   to read against the panel */
 :root[data-theme='dark'] .msg.tool code {
-  color: #0969da;
+  color: #58a6ff;
 }
 
 .msg.tool pre {
