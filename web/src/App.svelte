@@ -3120,7 +3120,7 @@
     <div class="browser" style="height: {browserExpandedHeight ?? `${(browserRatio * 100).toFixed(2)}%`}" onmouseenter={scheduleExpandBrowser} onmouseleave={collapseBrowser}>
       <div class="browser-path">
         <div class="head-left">
-          <button title="refresh the directory listing" onclick={() => browse(browserPath)}>refresh</button>
+          <button title="refresh the directory listing and the open file" onclick={() => refreshFiles()}>refresh</button>
           <span>/{browserPath}</span>
         </div>
         <div class="browser-actions">
