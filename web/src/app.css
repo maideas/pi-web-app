@@ -114,6 +114,34 @@
   padding: 0;
 }
 
+/* Slate-blue inline code on a light gray pill (code blocks keep --code-bg) */
+:root[data-theme='light']:not([data-contrast='cream']) .md code {
+  color: #4E6E8E;
+  background: #ECECEA;
+  border-radius: 6px;
+  padding: 0.1em 0.35em;
+}
+
+:root[data-theme='light']:not([data-contrast='cream']) .md pre code {
+  color: inherit;
+  background: transparent;
+  padding: 0;
+}
+
+/* Soft blue inline code on a raised pill (code blocks keep --code-bg) */
+:root[data-theme='dark'] .md code {
+  color: #8AB4E8;
+  background: #34373D;
+  border-radius: 6px;
+  padding: 0.1em 0.35em;
+}
+
+:root[data-theme='dark'] .md pre code {
+  color: inherit;
+  background: transparent;
+  padding: 0;
+}
+
 :root {
   font-family: system-ui, sans-serif;
 }
