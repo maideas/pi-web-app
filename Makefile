@@ -1,4 +1,7 @@
-.PHONY: build run dev check audit
+.PHONY: build run dev serve check audit
+
+HOST_IP = $(word 1, $(shell hostname -I))
+PORT = 5000
 
 # Build the frontend into web/dist/ (required; Flask serves only dist/)
 build:
@@ -7,6 +10,9 @@ build:
 # Rebuild frontend and start the Flask server (kills any running pi session)
 run: build
 	.venv/bin/python app.py
+
+serve: build
+	.venv/bin/gunicorn -w 1 --threads 8 -b $(HOST_IP):$(PORT) app:app
 
 # Vite dev server with live reload (run `make run`/app.py alongside it)
 dev:
