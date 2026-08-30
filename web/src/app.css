@@ -128,9 +128,11 @@
   padding: 0;
 }
 
-/* Soft blue inline code on a raised pill (code blocks keep --code-bg) */
+/* Light-theme blue inline code on a raised pill (code blocks keep
+   --code-bg); #0969da is too dim against the dark pill, so a brighter
+   blue from the same hue family keeps it legible (~4.8:1 on #34373D) */
 :root[data-theme='dark'] .md code {
-  color: #8AB4E8;
+  color: #58a6ff;
   background: #34373D;
   border-radius: 6px;
   padding: 0.1em 0.35em;
@@ -1166,6 +1168,12 @@ aside {
 /* Cream theme: --link is the brownish rust, but tool-call commands
    read better in the light theme's blue */
 :root[data-theme='light'][data-contrast='cream'] .msg.tool code {
+  color: #0969da;
+}
+
+/* Dark theme: tool-call commands use the light theme's blue instead of
+   the darker --link, which is hard to read against the panel */
+:root[data-theme='dark'] .msg.tool code {
   color: #0969da;
 }
 
