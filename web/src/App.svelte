@@ -124,21 +124,36 @@
           FORBID_TAGS: ['style', 'form', 'input', 'button', 'select', 'textarea', 'dialog'],
           FORBID_ATTR: ['style'],
         })
-        return clean.replace(/<img([^>]*?)\ssrc="([^"]*)"/gi, (m, pre, src) => {
-          if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('/') || src.startsWith('//')) return m
+        // DOMPurify re-serializes, so every <img> is a well-formed tag
+        // with double-quoted attributes: match whole tags and rewrite
+        // the src (relative -> /raw, remote -> placeholder in chat).
+        return clean.replace(/<img\b([^>]*)>/gi, (tag, attrs) => {
+          const m = attrs.match(/\ssrc="([^"]*)"/i)
+          if (!m) return tag
+          const src = m[1]
+          if (src.startsWith('/') && !src.startsWith('//')) return tag // same-origin absolute
+          if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//')) {
+            if (/^data:/i.test(src) || (mdRemoteImages && /^https:/i.test(src))) return tag
+            const alt = attrs.match(/\salt="([^"]*)"/i)?.[1] ?? ''
+            return remoteImagePlaceholder(src, alt)
+          }
           const path = normalizePath(mdImageBase ? `${mdImageBase}/${decodeHref(src)}` : decodeHref(src))
-          return `<img${pre} src="/raw/${encPath(path)}"`
+          return `<img${attrs.replace(m[0], ` src="/raw/${encPath(path)}"`)}>`
         })
       },
       image(token) {
-        // Images in markdown: absolute http(s)/data URLs pass through;
-        // relative paths are served inline via /raw, resolved against
-        // the markdown file's own directory (mdImageBase, set by
-        // renderMarkdown) — otherwise they'd 404 against the SPA URL.
+        // Images in markdown: data: URLs pass through; https: URLs are
+        // only auto-loaded in the file viewer (mdRemoteImages) — in the
+        // chat a prompt-injected agent could otherwise exfiltrate data
+        // through the URL of an image the browser fetches on its own, so
+        // there they become a click-through link instead. Relative paths
+        // are served inline via /raw, resolved against the markdown
+        // file's own directory (mdImageBase, set by renderMarkdown) —
+        // otherwise they'd 404 against the SPA URL.
         const href = token.href ?? ''
         if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
-          if (!/^(https?|data):/i.test(href)) return escapeHtml(token.text || '')
-          return false // safe absolute URL: default rendering
+          if (/^data:/i.test(href) || (mdRemoteImages && /^https:/i.test(href))) return false // default rendering
+          return remoteImagePlaceholder(href, token.text || '')
         }
         const path = normalizePath(mdImageBase ? `${mdImageBase}/${decodeHref(href)}` : decodeHref(href))
         const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
@@ -166,14 +181,28 @@
     },
   })
 
-  function highlight(text, path) {
+  // Remote image in chat output: a plain link the user has to click
+  // (opens in a new tab via onMdClick) instead of an auto-fetched <img>.
+  // Only http(s) targets get a link; anything else is reduced to text.
+  function remoteImagePlaceholder(url, alt) {
+    const label = `🖼 ${alt || url}`
+    if (!/^(https?:|\/\/)/i.test(url)) return escapeHtml(label)
+    return `<a class="md-remote-img" href="${escapeHtml(url)}" title="remote image (not loaded automatically): ${escapeHtml(url)}">${escapeHtml(label)}</a>`
+  }
+
+  // Syntax-highlight a whole file for the viewer. Unknown languages go
+  // through highlightAuto, which is too slow for very large inputs: by
+  // default those are truncated to escaped plain text; the editor
+  // underlay passes `truncate: false` because it must render the exact
+  // buffer text or it loses alignment with the textarea.
+  function highlight(text, path, { truncate = true } = {}) {
     const ext = path?.split('.').pop()?.toLowerCase()
     try {
       if (ext && hljs.getLanguage(ext)) {
         return hljs.highlight(text, { language: ext }).value
       }
       if (text.length > 200_000) {
-        return escapeHtml(text.slice(0, 200_000)) + '\n\n…(truncated)'
+        return truncate ? escapeHtml(text.slice(0, 200_000)) + '\n\n…(truncated)' : escapeHtml(text)
       }
       return hljs.highlightAuto(text).value
     } catch {
@@ -294,6 +323,8 @@
     const resp = await apiPost('/delete_sessions', { paths: [s.path] })
     if (resp.errors?.length) {
       entries.push({ role: 'system', text: `⚠️ ${resp.errors.map((e) => `${e.path}: ${e.error}`).join('\n')}` })
+    } else {
+      reportFailure(resp, 'delete session failed') // e.g. 403/500 without a per-path error list
     }
     await refreshSessions()
     // If the current session was deleted, move to the latest remaining
@@ -686,18 +717,8 @@
     }, 150)
   })
 
-  // Like highlight(), but never truncates: the underlay must render
-  // the exact buffer text or it loses alignment with the textarea.
-  function highlightForEdit(text, path) {
-    const ext = path?.split('.').pop()?.toLowerCase()
-    try {
-      if (ext && hljs.getLanguage(ext)) return hljs.highlight(text, { language: ext }).value
-      if (text.length > 200_000) return escapeHtml(text) // alignment over coloring
-      return hljs.highlightAuto(text).value
-    } catch {
-      return escapeHtml(text)
-    }
-  }
+  // Editor underlay: never truncate (alignment over coloring).
+  const highlightForEdit = (text, path) => highlight(text, path, { truncate: false })
 
   // Underlay content: a trailing newline collapses inside <pre> but
   // not inside <textarea>, so add one more to keep the layers aligned.
@@ -1118,7 +1139,7 @@
 
   // Markdown files are rendered in the viewer with the same marked +
   // highlight.js pipeline as the chat, so both look identical.
-  const isMarkdown = (path) => /\.md|\.markdown$/i.test(path ?? '')
+  const isMarkdown = (path) => /\.(md|markdown)$/i.test(path ?? '')
   // HTML files are rendered in a sandboxed iframe via /raw so relative
   // assets resolve. `allow-scripts` (without allow-same-origin) lets
   // the page's own JS run in an opaque origin — no access to the app's
@@ -1447,6 +1468,7 @@
     }
   }
 
+  // Human-readable byte count (directory listing sizes, tool summaries).
   function fmtSize(s) {
     if (s == null) return ''
     if (s < 1024) return `${s} B`
@@ -1454,17 +1476,34 @@
     return `${(s / 1024 / 1024).toFixed(1)} MB`
   }
 
-  // Base directory for resolving relative image paths during a parse;
-  // '' (project root) for chat messages, the file's directory for the
-  // viewer. Module-scoped because marked renderers take no extra args.
+  // Per-parse renderer context (module-scoped because marked renderers
+  // take no extra args): mdImageBase is the directory relative image
+  // paths resolve against ('' = project root for chat messages, the
+  // file's directory for the viewer); mdRemoteImages allows https:
+  // images to load automatically — only for the file viewer, see the
+  // image renderer.
   let mdImageBase = ''
-  function renderMarkdown(text, base = '') {
+  let mdRemoteImages = false
+  // Final sanitizer pass over the complete rendered document. The
+  // custom renderers already filter URLs and raw HTML, but this is
+  // the layer that catches what they miss (e.g. entity-encoded
+  // schemes like `javascript&colon;`, which DOMPurify checks after
+  // decoding). Must keep what our renderers emit: the code-copy
+  // <button>, heading ids, data-lang, the alert octicon <svg>, and
+  // marked's disabled task-list checkboxes.
+  const MD_SANITIZE = {
+    FORBID_TAGS: ['style', 'form', 'select', 'textarea', 'dialog'],
+    FORBID_ATTR: ['style'],
+  }
+  function renderMarkdown(text, base = '', { remoteImages = false } = {}) {
     mdImageBase = base
+    mdRemoteImages = remoteImages
     slugger.reset()
     try {
-      return marked.parse(text ?? '', { async: false })
+      return DOMPurify.sanitize(marked.parse(text ?? '', { async: false }), MD_SANITIZE)
     } finally {
       mdImageBase = ''
+      mdRemoteImages = false
     }
   }
 
@@ -1506,6 +1545,41 @@
   function currentAssistant() {
     const last = entries[entries.length - 1]
     return last?.role === 'assistant' ? last : null
+  }
+
+  // Assistant messages render markdown (marked + hljs, then DOMPurify). While
+  // streaming, re-parsing the ENTIRE accumulated message on every text
+  // delta would be O(n²) over a long answer — the parse work and the DOM
+  // diff both grow with each delta. So the interim render is debounced:
+  // deltas only append to the raw text buffer, and a trailing timer (one
+  // for the whole app: only one entry ever streams at a time) re-renders
+  // entry.mdHtml at most every MD_RENDER_MS. The final text is rendered
+  // synchronously on message_end (and once at load), so the debounce only
+  // affects the interim streaming view.
+  const MD_RENDER_MS = 100
+  let mdRenderTimer = null
+  let mdRenderEntry = null
+  function scheduleMdRender(entry) {
+    mdRenderEntry = entry
+    if (mdRenderTimer) return
+    mdRenderTimer = setTimeout(() => {
+      mdRenderTimer = null
+      const e = mdRenderEntry
+      mdRenderEntry = null
+      if (e) {
+        e.mdHtml = renderMarkdown(e.text)
+        scrollToBottom()
+      }
+    }, MD_RENDER_MS)
+  }
+  // Render an assistant entry's markdown right away (message_end,
+  // history load, error pushes) — and cancel a pending debounce so a
+  // finished message is never re-rendered by a stale timer.
+  function renderMdNow(entry) {
+    clearTimeout(mdRenderTimer)
+    mdRenderTimer = null
+    mdRenderEntry = null
+    entry.mdHtml = renderMarkdown(entry.text)
   }
 
   // Message navigator: the dots in the gap between chat and file panes.
@@ -1586,7 +1660,7 @@
       }
       case 'write': {
         const size = typeof args.content === 'string' ? args.content.length : 0
-        return `${path(args.path)}${size ? ` · ${formatBytes(size)}` : ''}`
+        return `${path(args.path)}${size ? ` · ${fmtSize(size)}` : ''}`
       }
       case 'grep': {
         if (!args.pattern) return ''
@@ -1613,12 +1687,6 @@
         return ''
       }
     }
-  }
-
-  function formatBytes(n) {
-    if (n < 1024) return `${n} B`
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} kB`
-    return `${(n / 1024 / 1024).toFixed(1)} MB`
   }
 
   // Copy text to the clipboard with a brief ✓ feedback on the button.
@@ -1757,6 +1825,16 @@
     }
   }
 
+  // Surface a failed API response in the chat as a system line (the
+  // only global feedback channel); returns true when it was a failure
+  // so callers can `if (reportFailure(r, '...')) return`.
+  function reportFailure(resp, what) {
+    if (resp?.success) return false
+    entries.push({ role: 'system', text: `⚠️ ${what}: ${resp?.error ?? 'request failed'}` })
+    scrollToBottom()
+    return true
+  }
+
   async function refreshState() {
     const resp = await apiGet('/state')
     if (!resp.success) return
@@ -1815,17 +1893,23 @@
   async function onModelChange(e) {
     const [provider, modelId] = e.target.value.split('::')
     const resp = await apiPost('/set_model', { provider, modelId })
-    if (resp.success) {
-      currentModel = resp.data
-      const levels = await apiGet('/thinking_levels')
-      if (levels.success) thinkingLevels = levels.data.levels
-      if (!thinkingLevels.includes(thinkingLevel)) thinkingLevel = 'off'
+    if (reportFailure(resp, 'model switch failed')) {
+      await refreshState() // snap the select back to the model pi actually uses
+      return
     }
+    currentModel = resp.data
+    const levels = await apiGet('/thinking_levels')
+    if (levels.success) thinkingLevels = levels.data.levels
+    if (!thinkingLevels.includes(thinkingLevel)) thinkingLevel = 'off'
   }
 
   async function onThinkingChange(e) {
     const resp = await apiPost('/set_thinking', { level: e.target.value })
-    if (resp.success) thinkingLevel = e.target.value
+    if (reportFailure(resp, 'thinking level change failed')) {
+      await refreshState()
+      return
+    }
+    thinkingLevel = e.target.value
   }
 
   async function loadProjects() {
@@ -2056,6 +2140,7 @@
 
   async function switchToSession(path) {
     const resp = await apiPost('/switch_session', { path })
+    reportFailure(resp, 'session switch failed')
     if (resp.success && !resp.data?.cancelled) {
       currentSessionPath = path
       entries = []
@@ -2079,7 +2164,7 @@
 
       case 'message_start':
         if (ev.message?.role === 'assistant') {
-          entries.push({ role: 'assistant', text: '', thinking: '' })
+          entries.push({ role: 'assistant', text: '', thinking: '', mdHtml: '' })
           scrollToBottom()
         }
         break
@@ -2088,11 +2173,12 @@
         const d = ev.assistantMessageEvent
         let a = currentAssistant()
         if (!a) {
-          a = { role: 'assistant', text: '', thinking: '' }
-          entries.push(a)
+          entries.push({ role: 'assistant', text: '', thinking: '', mdHtml: '' })
+          a = currentAssistant() // the proxied entry: mutations on it are reactive
         }
         if (d?.type === 'text_delta') {
           a.text += d.delta
+          scheduleMdRender(a)
         } else if (d?.type === 'thinking_delta') {
           a.thinking += d.delta
         }
@@ -2115,6 +2201,7 @@
             if (text || thinking) {
               a.text = text
               if (thinking) a.thinking = thinking
+              renderMdNow(a)
             } else {
               // Tool-call-only turn: drop the blank placeholder pushed at
               // message_start, otherwise it renders as an empty bubble
@@ -2122,7 +2209,7 @@
               entries.pop()
             }
           } else if (text || thinking) {
-            entries.push({ role: 'assistant', text, thinking })
+            entries.push({ role: 'assistant', text, thinking, mdHtml: renderMarkdown(text) })
           }
           // Live token/cost update once per completed assistant message.
           refreshStatsDebounced()
@@ -2541,7 +2628,8 @@
     if (streaming) body.streamingBehavior = 'steer'
     const data = await apiPost('/prompt', body)
     if (!data.success) {
-      entries.push({ role: 'assistant', text: `⚠️ ${data.error ?? 'prompt rejected'}` })
+      const text = `⚠️ ${data.error ?? 'prompt rejected'}`
+      entries.push({ role: 'assistant', text, mdHtml: renderMarkdown(text) })
     }
   }
 
@@ -2610,7 +2698,7 @@
         for (const c of m.content ?? []) {
           if (c.type === 'toolCall' && c.id) argsByCallId.set(c.id, c.arguments ?? {})
         }
-        if (text || thinking) entries.push({ role: 'assistant', text, thinking })
+        if (text || thinking) entries.push({ role: 'assistant', text, thinking, mdHtml: renderMarkdown(text) })
       } else if (m.role === 'toolResult') {
         entries.push({
           role: 'tool',
@@ -2987,7 +3075,7 @@
         {#if entry.text || !entry.thinking}
           <div class="msgrow assistant">
             <div class="msg assistant md">
-              {@html renderMarkdown(entry.text)}
+              {@html entry.mdHtml}
             </div>
             <div class="copycol">
               {#if entry.text?.trim()}
@@ -3248,7 +3336,7 @@
           {:else if selectedFile.text !== null && isMarkdown(selectedFile.path) && !plainView}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="filecontent md" onclick={(e) => onMdClick(e, selectedFile.path.split('/').slice(0, -1).join('/'))}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'))}</div>
+            <div class="filecontent md" onclick={(e) => onMdClick(e, selectedFile.path.split('/').slice(0, -1).join('/'))}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'), { remoteImages: true })}</div>
           {:else if selectedFile.text !== null && isHtml(selectedFile.path) && !plainView}
             <div class="filecontent html">
               <iframe src={`/raw/${encPath(selectedFile.path)}?v=${selectedFile.v}`} sandbox="allow-scripts allow-forms" title={selectedFile.path}></iframe>

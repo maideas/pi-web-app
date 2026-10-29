@@ -938,6 +938,16 @@ aside {
   height: auto;
 }
 
+/* Remote image in chat output, rendered as a click-through link instead
+   of an auto-loaded <img> (see remoteImagePlaceholder in App.svelte) */
+.md a.md-remote-img {
+  display: inline-block;
+  padding: 0.1em 0.5em;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
 .md pre {
   position: relative; /* anchors the code copy button */
   margin: 0.85em 0;

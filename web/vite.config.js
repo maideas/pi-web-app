@@ -8,7 +8,8 @@ export default defineConfig({
     proxy: {
       '/events': 'http://127.0.0.1:5000',
       '/prompt': 'http://127.0.0.1:5000',
-      '/abort': 'http://127.0.0.1:5000',
+      '/abort': 'http://127.0.0.1:5000', // also matches /abort_bash (prefix)
+      '/bash': 'http://127.0.0.1:5000',
       '/new_session': 'http://127.0.0.1:5000',
       '/messages': 'http://127.0.0.1:5000',
       '/state': 'http://127.0.0.1:5000',

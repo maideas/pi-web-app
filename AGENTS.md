@@ -6,9 +6,15 @@ frontend notes.
 
 ## Running and building
 
-- Backend: `python app.py` (Flask, port 5000 or `$PORT`, binds all
-  interfaces — use `HOST=127.0.0.1` for loopback-only — serves `web/dist/`).
-  Python deps: `pip install -r requirements.txt`.
+- Backend: `python app.py` (Flask, port 5000 or `$PORT`, binds the
+  primary LAN IP plus a loopback listener — `HOST=127.0.0.1` for
+  loopback-only, `HOST=0.0.0.0` for all interfaces — serves `web/dist/`).
+  Python deps: `pip install -r requirements.txt`; `make audit` additionally
+  needs `requirements-dev.txt` (pip-audit) in the venv.
+- `make serve` runs gunicorn with **one** worker (all bridge state and the
+  pi subprocess are module globals) and a thread pool; each open browser
+  tab pins one thread for its SSE stream and an exhausted pool stalls
+  every request — keep `--threads` generous, never raise `-w`.
 - Frontend: `cd web && npm run build` — **required after every change
   under `web/src/`**: `web/dist/` is gitignored, so Flask only serves
   what was last built. `npm run dev` gives a Vite dev server with a
@@ -46,6 +52,21 @@ frontend notes.
   `project_switched` event (the intentional stop suppresses
   `pi_exited`).
 
+## Browser facts learned the hard way
+
+- The HTML preview iframe is `sandbox`ed without `allow-same-origin`, so
+  its document has an opaque origin and browsers send
+  `Sec-Fetch-Site: cross-site` for *everything* it loads (verified in
+  Chromium). The cross-site rejection in `request_origin_checks` therefore
+  exempts passive `no-cors` subresource loads of `/raw/*` — don't tighten
+  that without re-testing the HTML preview with relative assets.
+- Chat markdown must never auto-load remote images (exfiltration channel
+  for prompt-injected agent output): `renderMarkdown` only allows them
+  with `{ remoteImages: true }`, which the file viewer passes. The whole
+  rendered document goes through DOMPurify (`MD_SANITIZE`); keep the
+  code-copy `<button>`, heading ids, `data-lang` and the alert `<svg>`
+  allowed when changing that config.
+
 ## pi RPC facts learned the hard way
 
 - `set_session_name` does **not** rewrite the session-file header; pi
@@ -73,9 +94,9 @@ frontend notes.
 - Commit style: imperative subject line, no prefix conventions
   (see `git log`).
 - `.env` holds machine-local settings (trusted hosts, bind address) and
-  is gitignored — it is the only place documenting them, so add new
-  variables there as commented-out defaults (and mention them in the
-  README).
+  is gitignored; the tracked `.env.example` is the template documenting
+  them — add new variables there as commented-out defaults (and mention
+  them in the README).
 - `web/dist/`, `build/`, `.venv/`, `__pycache__/` are gitignored —
   never commit build artifacts.
 

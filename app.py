@@ -39,6 +39,11 @@ PI_CMD = ["pi", "--mode", "rpc"]
 DIST_DIR = "web/dist"
 # Auto-naming threshold: combined length of the session's user messages.
 MIN_USER_CHARS = 120
+# Upper bound for how long a /bash waiter thread polls for the command
+# result before giving up — a live-but-unresponsive pi process would
+# otherwise leak one thread per command. Generous on purpose: builds
+# and test suites legitimately run for many minutes.
+BASH_WAIT_TIMEOUT = 3600.0
 APP_ROOT = Path(__file__).resolve().parent
 # Machine-local configuration (PI_WEB_TRUSTED_HOSTS, HOST, PORT, ...) from
 # an unmanaged .env next to app.py — gitignored, so each host can set its
@@ -105,7 +110,12 @@ class DynamicTrustedHosts:
         self._lock = threading.Lock()
 
     def _resolve(self) -> set[str]:
-        hosts = {"127.0.0.1", "localhost", "::1"}
+        # No IPv6 literals: Werkzeug's host_is_trusted() cuts every
+        # trusted entry at its first ':' (ref.partition(":")), so an
+        # IPv6 address can never match and `Host: [::1]:5000` always
+        # gets a 400. The loopback listener binds 127.0.0.1 only and
+        # the LAN bind is IPv4, so nothing reaches us over IPv6 anyway.
+        hosts = {"127.0.0.1", "localhost"}
         for extra in os.environ.get("PI_WEB_TRUSTED_HOSTS", "").split(","):
             if extra.strip():
                 hosts.add(extra.strip())
@@ -165,6 +175,9 @@ class PiProcess:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
+            # Never let one invalid byte in pi's output raise in the reader
+            # (which would drop every event buffered in the same chunk).
+            errors="replace",
             bufsize=1,
         )
         # Broadcast queues: every connected SSE client gets its own copy.
@@ -242,9 +255,20 @@ class PiProcess:
 
         def waiter() -> None:
             resp: dict | None = None
+            deadline = time.monotonic() + BASH_WAIT_TIMEOUT
             while resp is None:
                 if not self.is_alive():
                     resp = {"success": False, "error": "pi process exited"}
+                elif time.monotonic() >= deadline:
+                    # Live but unresponsive pi: stop leaking this thread.
+                    # The pending entry is dropped below, so a very late
+                    # real response has no waiter and is broadcast (and
+                    # ignored) like any other unknown event.
+                    resp = {
+                        "success": False,
+                        "error": "timed out waiting for the command result "
+                        "(the command may still be running in pi)",
+                    }
                 else:
                     try:
                         resp = q.get(timeout=0.5)
@@ -325,8 +349,8 @@ class PiProcess:
         """Read JSONL events from pi stdout. Split on \\n only (strict JSONL)."""
         while self.proc.poll() is None:
             try:
-                for line in self.proc.stdout:
-                    line = line.rstrip("\n\r")
+                for raw in self.proc.stdout:
+                    line = raw.rstrip("\n\r")
                     if not line:
                         continue
                     try:
@@ -508,12 +532,18 @@ def startup_project(projects: list[dict]) -> dict:
     """The project to open on startup, confined to the workspace.
 
     Out-of-workspace registry entries (stale or hand-edited) are never
-    opened; if no entry qualifies, the app dir itself is (re-)registered
-    as a safe fallback.
+    opened, and neither are entries whose directory no longer exists —
+    PiProcess could not spawn in a missing cwd, so a stale entry must
+    not take the whole server down at startup. If no entry qualifies,
+    the app dir itself is (re-)registered as a safe fallback.
     """
-    inside = [p for p in projects if not project_outside_workspace(p)]
-    if inside:
-        return most_recent_project(inside)
+    usable = [
+        p
+        for p in projects
+        if not project_outside_workspace(p) and Path(p["path"]).is_dir()
+    ]
+    if usable:
+        return most_recent_project(usable)
     if not contained(APP_ROOT):
         raise SystemExit(
             f"no registered project inside workspace {WORKSPACE_ROOT} and the "
@@ -564,11 +594,70 @@ def project_root() -> Path:
 # ---------------------------------------------------------------------------
 
 
+# Sec-Fetch-Dest values of passive subresource loads a sandboxed HTML
+# preview may legitimately issue against /raw/ (see request_origin_checks).
+RAW_SUBRESOURCE_DESTS = frozenset({"image", "style", "script", "font", "video", "audio", "track"})
+
+
 @app.before_request
-def csrf_protection():
-    """Mitigate CSRF attacks: require custom X-Requested-With header on POSTs."""
+def request_origin_checks():
+    """Block CSRF and cross-site requests.
+
+    POST/PUT/DELETE/PATCH require a custom X-Requested-With header:
+    cross-origin pages can't send it without a CORS preflight, which
+    this app never grants (CSRF protection).
+
+    All methods: requests that the browser marks as cross-site via
+    `Sec-Fetch-Site: cross-site` are rejected. Host validation stops
+    DNS rebinding (attacker-controlled *names*), but a remote page can
+    still address the server by its raw LAN IP — and GET subresources
+    (<img>/<script> tags) can't carry a custom header, so the CSRF
+    check alone wouldn't cover them. This blocks such probing requests
+    from modern browsers. The header is absent for non-browser clients
+    (curl, pi tooling) and for the Vite dev proxy's forwarded requests
+    (same-origin at the browser), so those are unaffected.
+
+    Exceptions:
+
+    - Top-level GET navigations (`Sec-Fetch-Mode: navigate`, e.g.
+      following a link to the app from another site) are allowed — the
+      attacker page can't read the response, and embedding in a frame
+      is already blocked by `frame-ancestors 'none'`. Browsers report
+      the same site for every port on the same raw IP (`same-site`), so
+      this check doesn't separate other services on the same host.
+    - no-cors subresource loads (images, stylesheets, scripts, fonts,
+      media) of `/raw/` files. The HTML preview iframe is sandboxed
+      without allow-same-origin, so its document has an *opaque*
+      origin — and browsers label every request such a document makes
+      as `cross-site` (verified in Chromium), including the relative
+      <img>/<link>/<script> assets the preview exists to resolve. Fetch
+      Metadata cannot tell that sandbox apart from a remote page, so
+      these read-only loads are exempted; `fetch()`/XHR (`mode: cors`)
+      and every other endpoint stay blocked. Residual exposure: a
+      remote page can probe the *existence* of project files via
+      <img onload> and include project .js files as scripts — it still
+      cannot read file contents or drive the agent.
+    """
     if request.method in ("POST", "PUT", "DELETE", "PATCH") and request.headers.get("X-Requested-With") != "XMLHttpRequest":
         return jsonify({"success": False, "error": "CSRF validation failed: missing custom header"}), 403
+    if request.headers.get("Sec-Fetch-Site") == "cross-site" and request.method == "GET":
+        mode = request.headers.get("Sec-Fetch-Mode")
+        if mode == "navigate":
+            return None
+        if (
+            mode == "no-cors"
+            and request.path.startswith("/raw/")
+            and request.headers.get("Sec-Fetch-Dest") in RAW_SUBRESOURCE_DESTS
+        ):
+            return None
+    if request.headers.get("Sec-Fetch-Site") == "cross-site":
+        return jsonify({"success": False, "error": "cross-site request rejected"}), 403
+    return None
+
+
+# SSE keepalive interval: also bounds how long a stale stream's thread
+# lingers after its pi process is gone (see events()).
+SSE_KEEPALIVE_S = 5
 
 
 @app.route("/events")
@@ -586,9 +675,18 @@ def events():
         try:
             while True:
                 try:
-                    event = q.get(timeout=15)
+                    event = q.get(timeout=SSE_KEEPALIVE_S)
                     yield f"data: {json.dumps(event)}\n\n"
                 except queue.Empty:
+                    # The process this stream belongs to is gone (switch
+                    # or crash): its subscribers were already told via
+                    # project_switched / pi_exited and reconnect on
+                    # their own. End the stream so the worker thread is
+                    # freed within one keepalive interval — under
+                    # gunicorn's gthread worker every open stream pins
+                    # a thread, and stale ones stall the reconnect burst.
+                    if source.stopped or not source.is_alive():
+                        return
                     yield ": keepalive\n\n"
         finally:
             source.unsubscribe(q)
@@ -639,7 +737,7 @@ def bash():
     data = request.get_json(force=True, silent=True) or {}
     command = str(data.get("command") or "").strip()
     if not command:
-        return jsonify({"success": False, "error": "missing command"})
+        return jsonify({"success": False, "error": "missing command"}), 400
     client_id = str(data.get("id") or "").strip()
     cmd_id = client_id if re.fullmatch(r"[A-Za-z0-9-]{1,64}", client_id) else None
     return jsonify(pi().run_bash(command, bool(data.get("excludeFromContext")), cmd_id))
@@ -904,7 +1002,10 @@ def ui_response():
     for key in ("value", "confirmed", "cancelled"):
         if key in body:
             cmd[key] = body[key]
-    pi().send_command(cmd)
+    try:
+        pi().send_command(cmd)
+    except RuntimeError as exc:  # pipe broke between the liveness check and the write
+        return jsonify({"success": False, "error": str(exc)}), 503
     return "", 204
 
 
@@ -1139,12 +1240,21 @@ def create_project():
         if p.exists():
             return jsonify({"success": False, "error": f"{p.name} already exists"}), 409
         try:
+            # Never block on interactive prompts (credentials, unknown SSH
+            # host keys): under `make serve` from a terminal git would
+            # otherwise sit on the tty for the full timeout.
             proc = subprocess.run(
                 ["git", "clone", "--", git_url, str(p)],
                 capture_output=True, text=True, timeout=600, check=False,
+                stdin=subprocess.DEVNULL,
+                env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_SSH_COMMAND": "ssh -oBatchMode=yes"},
             )
         except subprocess.TimeoutExpired:
+            shutil.rmtree(p, ignore_errors=True)  # don't leave a half clone
             return jsonify({"success": False, "error": "git clone timed out"}), 504
+        except OSError as exc:
+            shutil.rmtree(p, ignore_errors=True)
+            return jsonify({"success": False, "error": f"git clone failed: {exc}"}), 500
         if proc.returncode != 0:
             shutil.rmtree(p, ignore_errors=True)  # don't leave a half clone
             detail = (proc.stderr or "").strip().splitlines()
@@ -1185,28 +1295,42 @@ def open_project(pid):
     registry (restored on next app start) and resumes the project's
     latest session.
     """
-    entry = next((p for p in load_projects() if p["id"] == pid), None)
-    if entry is None:
-        return jsonify({"success": False, "error": "unknown project"}), 404
-    if not Path(entry["path"]).is_dir():
-        return jsonify({"success": False, "error": "project directory is gone"}), 400
-    if project_outside_workspace(entry):
-        return jsonify({"success": False, "error": "project is outside the workspace"}), 403
     with switch_lock:
+        # Validate under the lock: the registry may change while waiting
+        # for it (e.g. a concurrent detach removes this project, or its
+        # directory vanishes) — only the entry read here counts.
+        # The new process is spawned FIRST and current[] swapped only
+        # after a successful spawn: if PiProcess raises (cwd gone between
+        # the is_dir() check and the spawn, resource exhaustion), the app
+        # stays consistently on the old project instead of showing the
+        # new one in the file browser while chat still runs in the old
+        # cwd.
+        projects = load_projects()
+        entry = next((p for p in projects if p["id"] == pid), None)
+        if entry is None:
+            return jsonify({"success": False, "error": "unknown project"}), 404
+        if not Path(entry["path"]).is_dir():
+            return jsonify({"success": False, "error": "project directory is gone"}), 400
+        if project_outside_workspace(entry):
+            return jsonify({"success": False, "error": "project is outside the workspace"}), 403
         if current["project"]["id"] == pid:
             return jsonify({"success": True, "project": entry})
         old = current["pi"]
-        old.broadcast({"type": "project_switched", "project": entry})
+        new_pi = PiProcess(entry["path"])
         # Remember as most-recently-opened (restored on next app start).
-        projects = load_projects()
         for p in projects:
             if p["id"] == pid:
                 p["lastOpened"] = datetime.now(timezone.utc).isoformat()
         save_projects(projects)
         current["project"] = entry
-        current["pi"] = PiProcess(entry["path"])
-        resume_latest_session(current["pi"])
-        old.stop()
+        current["pi"] = new_pi
+        old.broadcast({"type": "project_switched", "project": entry})
+        try:
+            resume_latest_session(new_pi)
+        finally:
+            # The switch has happened either way — never leave the old
+            # pi process running if resuming the session fails.
+            old.stop()
     return jsonify({"success": True, "project": entry})
 
 
@@ -1630,8 +1754,11 @@ def index():
     # Defense-in-depth against sanitizer regressions: the app renders
     # agent- and file-controlled markdown. 'unsafe-inline' styles are
     # needed for Svelte style attributes and the injected hljs themes.
+    # img-src: remote images are allowed so README badges render in the
+    # file viewer; the chat renderer never auto-loads them (prompt-
+    # injected agent output could exfiltrate data via image URLs).
     resp.headers["Content-Security-Policy"] = (
-        "default-src 'self'; img-src 'self' data: http: https:; "
+        "default-src 'self'; img-src 'self' data: https:; "
         "style-src 'self' 'unsafe-inline'; frame-src 'self'; object-src 'none'; "
         # No page may embed the app (clickjacking): a remote page could
         # otherwise iframe the LAN URL and overlay-trick clicks into it.

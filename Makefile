@@ -11,8 +11,13 @@ build:
 run: build
 	.venv/bin/python app.py
 
+# Production-style server. Exactly ONE worker (the pi subprocess and all
+# bridge state are module globals). Every open browser tab pins one
+# gthread thread for its SSE stream, and once the pool is exhausted ALL
+# requests stall — so keep the thread count well above the number of
+# tabs you'll ever have open (threads are cheap here).
 serve: build
-	.venv/bin/gunicorn -w 1 --threads 8 -b $(HOST_IP):$(PORT) app:app
+	.venv/bin/gunicorn -w 1 --threads 64 -b $(HOST_IP):$(PORT) app:app
 
 # Vite dev server with live reload (run `make run`/app.py alongside it)
 dev:
@@ -25,7 +30,8 @@ check:
 	npm --prefix web run build
 
 # Dependency vulnerability audit (backend pins + frontend runtime deps).
-# pip-audit needs network access; install it via pip if missing.
+# Needs network access and pip-audit in the venv:
+#   .venv/bin/python -m pip install -r requirements-dev.txt
 audit:
-	python3 -m pip_audit -r requirements.txt
+	.venv/bin/python -m pip_audit -r requirements.txt
 	npm --prefix web audit --omit=dev
