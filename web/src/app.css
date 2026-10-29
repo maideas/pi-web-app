@@ -2215,6 +2215,8 @@ select {
      80%/90%); the chat padding provides the slight margin */
   .chat {
     padding: 0.6rem;
+    /* clear the floating hamburger + project pill at scroll-top */
+    padding-top: 3.6rem;
     gap: 1.2rem;
   }
   .msg.user,
@@ -2353,6 +2355,38 @@ select {
     padding: 0;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     cursor: pointer;
+  }
+  /* Project name pill: right of the hamburger, same height and look,
+     spanning the remaining width with the same 12px side margin */
+  .fab-project {
+    position: fixed;
+    top: 12px;
+    left: 60px; /* 12px margin + 40px hamburger + 8px gap */
+    right: 12px;
+    z-index: 40;
+    height: 40px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--panel, var(--bg));
+    opacity: 0.85;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    padding: 0 1rem;
+    color: var(--fg);
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .fab-session {
+    font-weight: normal;
+  }
+  .fab-project.none {
+    font-weight: normal;
+    font-style: italic;
+    color: var(--status-fg);
   }
   .fab span {
     display: block;

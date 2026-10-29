@@ -1843,6 +1843,7 @@
     // The active session path comes cheaply with /state; the sessions
     // list itself is loaded lazily (see ensureSessionsLoaded).
     if (resp.data.sessionFile) currentSessionPath = resp.data.sessionFile
+    stateSessionName = resp.data.sessionName ?? ''
     const levels = await apiGet('/thinking_levels')
     if (levels.success) thinkingLevels = levels.data.levels
   }
@@ -2038,6 +2039,18 @@
   // No project selected (e.g. the current one was detached): chat and
   // sessions are blocked until the user actively opens or creates one.
   const noProject = $derived(projects.length > 0 && !currentProjectId)
+  const currentProject = $derived(projects.find((p) => p.id === currentProjectId) ?? null)
+  // Display name of the active session for the mobile header pill.
+  // get_state carries it cheaply; the (lazily loaded) sessions list is
+  // fresher after renames, but falls back to the file stem for unnamed
+  // sessions — treat that as "no name" rather than showing a file id.
+  let stateSessionName = $state('')
+  const currentSessionName = $derived.by(() => {
+    const s = sessions.find((x) => x.path === currentSessionPath)
+    if (!s) return stateSessionName
+    const stem = s.path.split('/').pop().replace(/\.jsonl$/, '')
+    return s.name === stem ? '' : s.name
+  })
 
   // Local UI reset after the current project was detached (by this tab
   // or another one): clear the chat and wait for an explicit choice.
@@ -3498,6 +3511,15 @@
     <button class="fab" aria-label="Open menu" aria-expanded={mobileMenuOpen} onclick={() => { mobileMenuOpen = !mobileMenuOpen; showNewProject = false; newEntryKind = null; slashDismissed = true }}>
       <span></span><span></span><span></span>
     </button>
+    <!-- Project name pill next to the hamburger (same style/height), so
+         the current project is always visible; only in the views whose
+         top row is free (the others show their own pane header there).
+         Tapping it opens the Projects view. -->
+    {#if ['chat', 'files', 'viewer'].includes(mobileView)}
+      <button class="fab-project" class:none={!currentProject} title={currentProject?.path ?? ''} onclick={() => setMobileView('projects')}>
+        {currentProject?.name ?? 'no project'}{#if currentProject && currentSessionName}<span class="fab-session">{` / ${currentSessionName}`}</span>{/if}
+      </button>
+    {/if}
     {#if mobileMenuOpen}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
