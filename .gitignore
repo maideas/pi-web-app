@@ -3,6 +3,5 @@ web/node_modules/
 web/dist/
 build/
 __pycache__/
-projects.json
-projects.tmp
+projects*.json*
 .env

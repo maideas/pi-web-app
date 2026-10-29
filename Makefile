@@ -2,6 +2,11 @@
 
 HOST_IP = $(word 1, $(shell hostname -I))
 PORT = 5000
+# Exported so app.py sees the port it is bound to: the registry file name
+# is derived from it (projects-<port>.json). Command-line overrides
+# (make serve PORT=5001) are exported too — without this they only reach
+# the -b flag, not the environment.
+export PORT
 
 # Build the frontend into web/dist/ (required; Flask serves only dist/)
 build:

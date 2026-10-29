@@ -6,11 +6,14 @@ Architecture:
 Single-user assumption: one active pi subprocess (for the current
 project), one event stream shared by all connected browser tabs.
 
-Multi-project: a registry (projects.json in the app dir) lists known
-projects; the active one gets a `PiProcess` spawned with the project
-directory as cwd. Switching projects terminates that process and spawns
-a new one — all pi I/O goes through the `PiProcess` class so a process
-pool (one pi per project) can replace the single active instance later.
+Multi-project: a registry (projects-<port>.json in the app dir, one
+per instance) lists known projects; the active one gets a `PiProcess`
+spawned with the project directory as cwd. Switching projects terminates
+that process and spawns a new one — all pi I/O goes through the
+`PiProcess` class so a process pool (one pi per project) can replace
+the single active instance later. Running several instances on
+different ports is the cheap way to host agents in multiple projects
+simultaneously; the port-keyed registry keeps their state separate.
 On startup the most recently opened project (by lastOpened) is selected
 and its latest session resumed.
 """
@@ -50,7 +53,15 @@ APP_ROOT = Path(__file__).resolve().parent
 # own names without touching tracked files. Real environment variables
 # win, which keeps one-off overrides on the command line working.
 load_dotenv(APP_ROOT / ".env")
-REGISTRY_PATH = APP_ROOT / "projects.json"
+# Keyed by port: each instance (each port) keeps its own project list,
+# pinned sessions and remembered files, so several `PORT=... make serve`
+# instances can run concurrently without racing on one file — switch_lock
+# serializes registry writers within one process only, not across
+# processes. The "5000" default matches the Makefile's PORT default.
+# Note: a `make serve PORT=...` override only reaches this lookup because
+# the Makefile exports PORT (command-line make variables are not part of
+# recipe environments by default).
+REGISTRY_PATH = APP_ROOT / f"projects-{os.environ.get('PORT', '5000')}.json"
 # Everything the web UI may touch (projects, file browser, downloads)
 # lives below this directory. Defaults to the parent of the app dir;
 # override with PI_WEB_WORKSPACE. This confines the *web endpoints* —
@@ -403,7 +414,7 @@ class PiProcess:
 
 
 # ---------------------------------------------------------------------------
-# Project registry (projects.json in the app dir, gitignored)
+# Project registry (projects-<port>.json in the app dir, gitignored)
 # ---------------------------------------------------------------------------
 
 

@@ -59,7 +59,12 @@ Features:
 - Light, cream, and dark themes
 
 **Limitation (by design):** single-user. One pi subprocess and one shared
-event stream serve all connected browser tabs.
+event stream serve all connected browser tabs. One instance hosts one
+active project; to run agents in several projects at once, start
+additional instances on other ports (`PORT=5001 make serve`) — the
+project registry is keyed by port (`projects-<port>.json`), so instances
+share no state. Don't register the same project on two instances:
+two agents editing one worktree will step on each other.
 
 **Security model:** by default the server binds the machine's primary
 LAN IP plus a separate loopback listener (so both `localhost:5000` and
@@ -164,7 +169,8 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`AGENTS.md`](AGENTS.md) | Project conventions for coding agents |
 
 Generated content (not committed): `web/dist/`, `web/node_modules/`,
-`.venv/`, `build/`, `__pycache__/`, `projects.json`.
+`.venv/`, `build/`, `__pycache__/`, `projects-<port>.json` (the per-port
+project registry).
 
 ## Backend API (Flask → pi RPC bridge)
 
@@ -269,7 +275,9 @@ frontend and starts the server in one step), `make dev` (Vite dev server),
 `make serve` (gunicorn, one worker with a thread pool — every open
 browser tab holds one thread for its event stream, so the pool is sized
 well above any realistic tab count; raising `-w` is not supported since
-the pi subprocess lives in the worker).
+the pi subprocess lives in the worker). `PORT=5001 make serve` starts a
+second, fully independent instance — each port has its own project
+registry, its own pi subprocess, and its own sessions.
 
 Frontend development with hot module reload:
 

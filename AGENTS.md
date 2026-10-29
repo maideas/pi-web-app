@@ -15,6 +15,11 @@ frontend notes.
   pi subprocess are module globals) and a thread pool; each open browser
   tab pins one thread for its SSE stream and an exhausted pool stalls
   every request — keep `--threads` generous, never raise `-w`.
+- Multiple instances on different ports are supported and independent
+  (`make serve PORT=5001`): the project registry is keyed by port
+  (`projects-<port>.json` next to app.py), so instances never share
+  state. Never register the same project on two instances — two agents
+  in one worktree corrupt each other's work.
 - Frontend: `cd web && npm run build` — **required after every change
   under `web/src/`**: `web/dist/` is gitignored, so Flask only serves
   what was last built. `npm run dev` gives a Vite dev server with a
