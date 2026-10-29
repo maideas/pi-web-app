@@ -2348,10 +2348,8 @@ select {
     background: var(--panel, var(--bg));
     opacity: 0.85;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
     padding: 0;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
     cursor: pointer;
@@ -2388,12 +2386,9 @@ select {
     font-style: italic;
     color: var(--status-fg);
   }
-  .fab span {
+  .fab svg {
     display: block;
-    width: 16px;
-    height: 2px;
-    background: var(--fg);
-    border-radius: 1px;
+    fill: var(--fg);
   }
 
   /* Slide-in navigation drawer */

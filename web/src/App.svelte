@@ -3509,7 +3509,11 @@
        the chat toolbar on desktop). -->
   {#if isMobile}
     <button class="fab" aria-label="Open menu" aria-expanded={mobileMenuOpen} onclick={() => { mobileMenuOpen = !mobileMenuOpen; showNewProject = false; newEntryKind = null; slashDismissed = true }}>
-      <span></span><span></span><span></span>
+      <!-- one inline SVG (not 3 CSS spans): Chrome pixel-snaps solid background
+           fills at fractional zoom/DPR, so each span rounded differently and the
+           bars looked unevenly thick (worst ~12% at 110% zoom). SVG paths use
+           analytic AA and render all bars identically at any zoom. -->
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1 2.75A.75.75 0 0 1 1.75 2h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 2.75Zm0 5A.75.75 0 0 1 1.75 7h12.5a.75.75 0 0 1 0 1.5H1.75A.75.75 0 0 1 1 7.75ZM1.75 12h12.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1 0-1.5Z"/></svg>
     </button>
     <!-- Project name pill next to the hamburger (same style/height), so
          the current project is always visible; only in the views whose
