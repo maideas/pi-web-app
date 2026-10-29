@@ -88,6 +88,16 @@ frontend notes.
   pi's `bash_execution_update` chunks carry). `bashExecution` history
   entries emit no `message_start`/`message_end` events — reloads get
   them from `get_messages`.
+- Extension commands (e.g. `/git-status`) run inside pi when sent as a
+  prompt (response `disposition: "handled"`, no agent run). In RPC mode
+  pi's stdout *is* the JSONL channel: anything an extension writes there
+  raw is dropped by the reader (`dropping non-JSON line`), so command
+  output must go through `ctx.ui.notify()`. The frontend renders notify
+  requests as ephemeral chat entries (`role: 'notice'`, multi-line text
+  as a collapsible block) — not part of the session, gone after reload.
+  Fire-and-forget UI methods (`notify`, `setStatus`, `setWidget`,
+  `setTitle`, `set_editor_text`) must not get an `extension_ui_response`;
+  only dialogs (`select`, `confirm`, `input`, `editor`) are answered.
 
 ## Git
 

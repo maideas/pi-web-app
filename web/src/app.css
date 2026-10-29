@@ -1201,6 +1201,22 @@ aside {
   color: var(--link);
 }
 
+/* ---------- extension notifications (ctx.ui.notify) ---------- */
+
+/* Multi-line notices reuse the tool block; the level shows as the
+   border colour (info keeps the neutral tool border). */
+.msg.notice.warning {
+  border: 2px solid var(--warn-border);
+}
+
+.msg.notice.error {
+  border: 2px solid var(--err);
+}
+
+.msg.tool.notice code.notice-title {
+  margin-left: 0.25rem;
+}
+
 /* ---------- shell command entries (`!cmd` / `!!cmd`) ---------- */
 
 .msg.tool.bash code.bash-cmd {

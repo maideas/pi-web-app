@@ -2411,13 +2411,23 @@
     }
   }
 
+  // Extension UI methods pi does not wait for (rpc-extension-ui.md):
+  // they must not get an extension_ui_response.
+  const UI_FIRE_AND_FORGET = new Set(['notify', 'setStatus', 'setWidget', 'setTitle', 'set_editor_text'])
+
   async function handleUiRequest(req) {
+    if (UI_FIRE_AND_FORGET.has(req.method)) {
+      if (req.method === 'notify') pushNotice(req.message, req.notifyType)
+      else if (req.method === 'setTitle' && req.title) document.title = req.title
+      else if (req.method === 'set_editor_text' && typeof req.text === 'string') {
+        input = req.text
+        tick().then(() => inputEl?.focus())
+      }
+      // setStatus / setWidget: no footer/widget area in this UI
+      return
+    }
     let resp = { type: 'extension_ui_response', id: req.id }
-    if (req.method === 'notify') {
-      // empty response for one-way notify
-    } else if (req.method === 'setStatus' || req.method === 'setWidget' || req.method === 'setTitle') {
-      if (req.method === 'setTitle' && req.title) document.title = req.title
-    } else if (req.method === 'confirm') {
+    if (req.method === 'confirm') {
       resp.confirmed = window.confirm(`${req.title ?? ''}\n${req.message ?? ''}`)
     } else if (req.method === 'select') {
       // Malformed request (options not an array) must not throw: pi
@@ -2437,6 +2447,24 @@
       resp.cancelled = true
     }
     await apiPost('/ui-response', resp)
+  }
+
+  // Extension notification (ctx.ui.notify) as a chat entry. Local-only
+  // and ephemeral: not part of the session, so it's gone after a
+  // reload (like the TUI's overlay/toast). Single-line messages render
+  // as a plain line; multi-line ones (command output such as
+  // /git-status) as a collapsible block with the first line as title.
+  function pushNotice(message, level) {
+    const text = String(message ?? '').trimEnd()
+    if (!text) return
+    const nl = text.indexOf('\n')
+    entries.push({
+      role: 'notice',
+      level: ['warning', 'error'].includes(level) ? level : 'info',
+      title: nl < 0 ? text : text.slice(0, nl),
+      body: nl < 0 ? '' : text.slice(nl + 1).replace(/^\n+/, ''),
+    })
+    scrollToBottom()
   }
 
   function onPickImages(e) {
@@ -2858,6 +2886,8 @@
     }
   }
 
+  const NOTICE_ICONS = { info: 'ℹ️', warning: '⚠️', error: '❌' }
+
   function fmtCost(c) {
     return c == null ? '—' : `$${c.toFixed(2)}`
   }
@@ -3043,6 +3073,15 @@
     {#each entries.slice(hiddenCount) as entry, k (hiddenCount + k)}
       {#if entry.role === 'system'}
         <div class="msg system">{entry.text}</div>
+      {:else if entry.role === 'notice'}
+        {#if entry.body}
+          <details class="msg tool notice {entry.level}" open>
+            <summary>{NOTICE_ICONS[entry.level]} <code class="notice-title">{entry.title}</code></summary>
+            <pre>{entry.body}</pre>
+          </details>
+        {:else}
+          <div class="msg system notice {entry.level}">{NOTICE_ICONS[entry.level]} {entry.title}</div>
+        {/if}
       {:else if entry.role === 'user'}
         <div class="msgrow user">
           <div class="msg user" data-idx={hiddenCount + k}>{entry.text}

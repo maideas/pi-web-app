@@ -30,7 +30,10 @@ Features:
   content, and can be deleted from a per-session menu. The projects
   section grows on hover (up to 80% of the window height) when not
   all entries fit, easing back when the mouse leaves
-- Slash commands with autocomplete, mapped to their RPC equivalents
+- Slash commands with autocomplete, mapped to their RPC equivalents;
+  extension commands run inside pi, and their notifications
+  (`ctx.ui.notify`, e.g. the output of a local `/git-status` command)
+  show up in the chat — multi-line output as a collapsible block
 - Shell commands: `!cmd` runs a command in the project directory with
   live-streamed output and adds the result to the model context with
   the next prompt; `!!cmd` runs it locally only (the model never sees
@@ -200,7 +203,7 @@ Sessions and slash commands:
 | `/delete_sessions` | POST | Delete session files from disk (paths confined to the session dir; deleting the active session is allowed) |
 | `/api/auto_name` | POST | Name the session from its content via a one-shot pi call (no-op if already named or too little content; `force: true` regenerates) |
 | `/export_html` | POST | Export session to an HTML file |
-| `/ui-response` | POST | Relay extension UI dialog responses to pi |
+| `/ui-response` | POST | Relay extension UI dialog responses to pi (dialogs only; fire-and-forget requests like `notify` get no response) |
 
 Projects:
 
