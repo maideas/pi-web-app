@@ -1705,9 +1705,10 @@
       return s
     }
     const path = (v) => (typeof v === 'string' && v.trim() ? shorten(v) : '')
+    const full = (v) => String(v ?? '').trim()
     switch (entry.name) {
       case 'bash':
-        return truncate(args.command, 160)
+        return full(args.command)
       case 'read': {
         let s = path(args.path)
         if (args.offset !== undefined || args.limit !== undefined) {
@@ -1745,7 +1746,11 @@
         // fields so the summary stays useful without per-tool knowledge.
         for (const k of ['command', 'path', 'pattern', 'query', 'url']) {
           const v = args[k]
-          if (typeof v === 'string' && v.trim()) return truncate(v, 160)
+          // Commands are shown in full (they wrap); other fields stay
+          // summarized.
+          if (typeof v === 'string' && v.trim()) {
+            return k === 'command' ? full(v) : truncate(v, 160)
+          }
         }
         return ''
       }
