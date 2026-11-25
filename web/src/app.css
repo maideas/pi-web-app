@@ -1077,17 +1077,27 @@ aside {
 :root[data-theme='dark'] .md .markdown-alert-caution { --alert-color: #f85149; }
 
 /* Markdown tables (.md covers chat and the file viewer): full width,
-   horizontal row lines only, left-aligned headers */
+   horizontal row lines only, left-aligned headers. Each table sits in
+   an .md-table-wrap scroll container (injected in renderMarkdown) so
+   wide tables scroll on their own instead of squashing against — or
+   overflowing — the pane. Extra bottom margin: text that follows a
+   table usually starts a new thought, so give it more air below than
+   the paragraphs above it get. */
+.md .md-table-wrap {
+  overflow-x: auto;
+  margin: 1.2em 0 1.5em; /* air before and (more) after tables */
+}
+
 .md table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1em 0; /* more air before and after tables */
 }
 
 .md th,
 .md td {
   text-align: left;
-  padding: 6px 13px;
+  vertical-align: top; /* multi-line cells read better top-aligned */
+  padding: 0.45em 0.85em; /* airier than GitHub's 6px 13px */
   border-bottom: 1px solid var(--input-border); /* more visible than --border */
 }
 
@@ -1935,6 +1945,21 @@ select {
   white-space: normal;
   font-size: 1rem;
   background: var(--bg);
+}
+
+/* Readable measure: cap prose blocks so lines don't stretch across the
+   full viewer pane on wide screens — ~80ch keeps lines comfortably short
+   (~85 characters at the default font). Wide elements are exempt — code
+   blocks (own scrollbar) and image-only paragraphs use the full pane
+   width; tables share the prose measure (their .md-table-wrap scrolls
+   horizontally when a many-column table genuinely needs more room). */
+.filecontent.md > * {
+  max-width: 80ch;
+}
+
+.filecontent.md > pre,
+.filecontent.md > p:has(> img:only-child) {
+  max-width: none;
 }
 
 

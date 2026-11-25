@@ -1583,6 +1583,17 @@
         if (url) img.setAttribute('src', url)
         else img.replaceWith(document.createTextNode(img.getAttribute('alt') || path))
       }
+      // Wrap each table in a horizontal-scroll container (built here, not
+      // by the sanitizer) so a wide table gets its own scrollbar instead of
+      // stretching — and horizontally scrolling — the whole chat/viewer
+      // pane. The wrapper also carries the table's vertical margins (see
+      // .md-table-wrap in app.css).
+      for (const t of [...frag.querySelectorAll('table')]) {
+        const wrap = document.createElement('div')
+        wrap.className = 'md-table-wrap'
+        t.replaceWith(wrap)
+        wrap.appendChild(t)
+      }
       const div = document.createElement('div')
       div.appendChild(frag)
       return div.innerHTML
