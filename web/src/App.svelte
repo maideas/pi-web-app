@@ -45,12 +45,19 @@
     }[m]))
   }
 
-  // Encode a project-relative path for use in a URL path (/raw/...,
+  // Encode a project-relative path for use in a URL path (/raw/<token>/...,
   // /download/...): per segment, so '/' separators survive but '?', '#'
   // and '%' in file names don't break the URL (encodeURI leaves ?/#
   // intact and would truncate the path server-side).
   function encPath(p) {
     return String(p).split('/').map(encodeURIComponent).join('/')
+  }
+
+  // Per-process secret prefix for /raw/<token>/<path> (fetched from
+  // /api/projects and /state) so remote web pages cannot guess /raw/ URLs.
+  let rawToken = $state('')
+  function rawUrl(p) {
+    return rawToken ? `/raw/${rawToken}/${encPath(p)}` : ''
   }
 
   // Markdown hrefs may be percent-encoded by the author (my%20file.png);
@@ -115,31 +122,14 @@
       html(token) {
         // Raw HTML embedded in markdown (e.g. <p align="center"> for a
         // centered logo): sanitize and pass through instead of escaping.
-        // Relative img srcs resolve via /raw against mdImageBase, like
-        // markdown images (see the image renderer below).
-        // Forbid style/form elements and inline styles: this pipeline
-        // also renders agent chat output, and unscoped <style> or fixed-
-        // position overlays could restyle/spoof the whole app.
-        const clean = DOMPurify.sanitize(token.text || '', {
-          FORBID_TAGS: ['style', 'form', 'input', 'button', 'select', 'textarea', 'dialog'],
-          FORBID_ATTR: ['style'],
-        })
-        // DOMPurify re-serializes, so every <img> is a well-formed tag
-        // with double-quoted attributes: match whole tags and rewrite
-        // the src (relative -> /raw, remote -> placeholder in chat).
-        return clean.replace(/<img\b([^>]*)>/gi, (tag, attrs) => {
-          const m = attrs.match(/\ssrc="([^"]*)"/i)
-          if (!m) return tag
-          const src = m[1]
-          if (src.startsWith('/') && !src.startsWith('//')) return tag // same-origin absolute
-          if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//')) {
-            if (/^data:/i.test(src) || (mdRemoteImages && /^https:/i.test(src))) return tag
-            const alt = attrs.match(/\salt="([^"]*)"/i)?.[1] ?? ''
-            return remoteImagePlaceholder(src, alt)
-          }
-          const path = normalizePath(mdImageBase ? `${mdImageBase}/${decodeHref(src)}` : decodeHref(src))
-          return `<img${attrs.replace(m[0], ` src="/raw/${encPath(path)}"`)}>`
-        })
+        // Forbid style/form/subresource elements and attributes: this
+        // pipeline renders agent chat output, so unscoped <style>,
+        // interactive controls, or non-<img> subresource loaders
+        // (<picture>/<source>, <video poster>, <svg><image>, srcset)
+        // must never survive. Image src rewriting and remote-image
+        // blocking are enforced uniformly via DOM traversal in
+        // renderMarkdown().
+        return DOMPurify.sanitize(token.text || '', HTML_SANITIZE)
       },
       image(token) {
         // Images in markdown: data: URLs pass through; https: URLs are
@@ -147,17 +137,19 @@
         // chat a prompt-injected agent could otherwise exfiltrate data
         // through the URL of an image the browser fetches on its own, so
         // there they become a click-through link instead. Relative paths
-        // are served inline via /raw, resolved against the markdown
-        // file's own directory (mdImageBase, set by renderMarkdown) —
-        // otherwise they'd 404 against the SPA URL.
+        // are served inline via /raw/<token>, resolved against the
+        // markdown file's own directory (mdImageBase, set by
+        // renderMarkdown) — otherwise they'd 404 against the SPA URL.
         const href = token.href ?? ''
         if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
           if (/^data:/i.test(href) || (mdRemoteImages && /^https:/i.test(href))) return false // default rendering
           return remoteImagePlaceholder(href, token.text || '')
         }
         const path = normalizePath(mdImageBase ? `${mdImageBase}/${decodeHref(href)}` : decodeHref(href))
+        const url = rawUrl(path)
+        if (!url) return escapeHtml(token.text || path)
         const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
-        return `<img src="/raw/${encPath(path)}" alt="${escapeHtml(token.text || '')}"${title}>`
+        return `<img src="${url}" alt="${escapeHtml(token.text || '')}"${title}>`
       },
       heading(token) {
         // marked emits plain <hN> without ids, so in-page anchors
@@ -239,6 +231,7 @@
   // respawns the pi subprocess with the project dir as cwd (killing the
   // running chat session, like an app restart).
   let projects = $state([])
+  let projectsLoaded = $state(false)
   let currentProjectId = $state('')
   let showNewProject = $state(false)
   let showSettings = $state(false)
@@ -745,24 +738,34 @@
     if (editMode || editSwitching || !selectedFile || selectedFile.text === null || selectedFile.image) return
     clearTimeout(editHlTimer)
     const started = Date.now()
+    const pseq = projectSeq
+    const file = selectedFile
     editSwitching = true
     // Async IIFE: quitEdit-style guards need this function to stay
     // fire-and-forget; the overlay must paint before the sync hljs
     // pass, so the work happens after a rendered frame.
     void (async () => {
-      await nextFrame()
-      editMode = true
-      editPath = selectedFile.path
-      editBase = selectedFile.text
-      editText = selectedFile.text
-      editConflict = null
-      editHtml = highlightForEdit(editText, editPath)
-      diffView = null // a diff against HEAD would go stale with every edit
-      await tick() // editor DOM rendered (still under the blur)
-      const wait = EDIT_SWITCH_MIN_MS - (Date.now() - started)
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait))
-      editSwitching = false
-      if (editEl) {
+      try {
+        await nextFrame()
+        // Bail cleanly if a project/file switch or detach happened while
+        // waiting for the paint frame.
+        if (pseq !== projectSeq || selectedFile !== file || !selectedFile || selectedFile.text === null || selectedFile.image) {
+          return
+        }
+        editMode = true
+        editPath = selectedFile.path
+        editBase = selectedFile.text
+        editText = selectedFile.text
+        editConflict = null
+        editHtml = highlightForEdit(editText, editPath)
+        diffView = null // a diff against HEAD would go stale with every edit
+        await tick() // editor DOM rendered (still under the blur)
+        const wait = EDIT_SWITCH_MIN_MS - (Date.now() - started)
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+      } finally {
+        editSwitching = false
+      }
+      if (editMode && editEl) {
         // Focus alone leaves caret/scroll browser-dependent (some put
         // the caret at the end): start at the top of the file.
         editEl.focus()
@@ -1492,23 +1495,75 @@
   // image renderer.
   let mdImageBase = ''
   let mdRemoteImages = false
-  // Final sanitizer pass over the complete rendered document. The
-  // custom renderers already filter URLs and raw HTML, but this is
-  // the layer that catches what they miss (e.g. entity-encoded
-  // schemes like `javascript&colon;`, which DOMPurify checks after
-  // decoding). Must keep what our renderers emit: the code-copy
-  // <button>, heading ids, data-lang, the alert octicon <svg>, and
-  // marked's disabled task-list checkboxes.
-  const MD_SANITIZE = {
-    FORBID_TAGS: ['style', 'form', 'select', 'textarea', 'dialog'],
-    FORBID_ATTR: ['style'],
+  // Shared sanitizer deny-lists. Forbid style/form controls and every
+  // HTML/SVG subresource-loading element or attribute outside <img> so
+  // prompt-injected chat output cannot trigger outbound image fetches
+  // via <img srcset>, <picture>/<source>, <video poster>, or <svg><image>.
+  // MD_SANITIZE keeps what our renderers emit: code-copy <button>,
+  // heading ids, data-lang, alert octicon <svg>/<path>, and marked's
+  // disabled task-list <input> checkboxes.
+  const MD_FORBID_TAGS = [
+    'style', 'form', 'select', 'textarea', 'dialog',
+    'picture', 'source', 'video', 'audio',
+    'image', 'feImage', 'use', 'foreignObject',
+  ]
+  const MD_FORBID_ATTR = ['style', 'srcset', 'poster']
+  const HTML_SANITIZE = {
+    FORBID_TAGS: [...MD_FORBID_TAGS, 'input', 'button'],
+    FORBID_ATTR: MD_FORBID_ATTR,
   }
+  const MD_SANITIZE = {
+    FORBID_TAGS: MD_FORBID_TAGS,
+    FORBID_ATTR: MD_FORBID_ATTR,
+  }
+
+  function remoteImagePlaceholderNode(url, alt) {
+    const label = `🖼 ${alt || url}`
+    if (!/^(https?:|\/\/)/i.test(url)) return document.createTextNode(label)
+    const a = document.createElement('a')
+    a.className = 'md-remote-img'
+    a.setAttribute('href', url)
+    a.setAttribute('title', `remote image (not loaded automatically): ${url}`)
+    a.textContent = label
+    return a
+  }
+
   function renderMarkdown(text, base = '', { remoteImages = false } = {}) {
     mdImageBase = base
     mdRemoteImages = remoteImages
     slugger.reset()
     try {
-      return DOMPurify.sanitize(marked.parse(text ?? '', { async: false }), MD_SANITIZE)
+      const parsed = marked.parse(text ?? '', { async: false })
+      const frag = DOMPurify.sanitize(parsed, { ...MD_SANITIZE, RETURN_DOM_FRAGMENT: true })
+      const rawPrefix = rawToken ? `/raw/${rawToken}/` : ''
+      // Enforce image policy on the real parsed DOM tree (covers both
+      // markdown images and raw HTML <img> regardless of attribute syntax).
+      for (const img of frag.querySelectorAll('img')) {
+        img.removeAttribute('srcset')
+        const src = (img.getAttribute('src') ?? '').trim()
+        if (!src) {
+          img.remove()
+          continue
+        }
+        if (rawPrefix && src.startsWith(rawPrefix)) continue
+        if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//')) {
+          if (/^data:/i.test(src) || (remoteImages && /^https:/i.test(src))) continue
+          img.replaceWith(remoteImagePlaceholderNode(src, img.getAttribute('alt') ?? ''))
+          continue
+        }
+        if (src.startsWith('/')) {
+          // Same-origin non-/raw/ paths are not allowed to auto-fetch in chat.
+          if (!remoteImages) img.remove()
+          continue
+        }
+        const path = normalizePath(base ? `${base}/${decodeHref(src)}` : decodeHref(src))
+        const url = rawUrl(path)
+        if (url) img.setAttribute('src', url)
+        else img.replaceWith(document.createTextNode(img.getAttribute('alt') || path))
+      }
+      const div = document.createElement('div')
+      div.appendChild(frag)
+      return div.innerHTML
     } finally {
       mdImageBase = ''
       mdRemoteImages = false
@@ -1887,6 +1942,7 @@
   // transition; null = unguarded.
   async function refreshState(seq = null, pseq = null) {
     const resp = await apiGet('/state')
+    if (resp.rawToken) rawToken = resp.rawToken
     if (!resp.success) return
     if (pseq !== null && pseq !== projectSeq) return
     currentModel = resp.data.model
@@ -1998,7 +2054,9 @@
 
   async function loadProjects() {
     const resp = await apiGet('/api/projects')
+    if (resp.rawToken) rawToken = resp.rawToken
     projects = resp.projects ?? []
+    projectsLoaded = true
     currentProjectId = projects.find((p) => p.current)?.id ?? ''
     // A project click while the pane was hovered collapses the pane on
     // mouse-leave; the .current class lands on the newly selected item
@@ -2041,7 +2099,9 @@
     viewerHistory = []
     viewerFuture = []
     toolsUsedInRun = false
-    await browse('')
+    // Load projects alongside the initial directory listing so rawToken
+    // is populated before loadHistory() renders any relative chat images.
+    await Promise.all([browse(''), loadProjects()])
     if (pseq !== projectSeq) return
     // Session-scoped steps (seq) skip themselves when a session switch
     // or new session took over meanwhile — that action loads its own
@@ -2053,7 +2113,6 @@
       refreshModels(),
       refreshStats(),
       loadCommands(),
-      loadProjects(),
     ])
     if (pseq !== projectSeq) return
     if (seq === chatSeq) {
@@ -2164,7 +2223,7 @@
 
   // No project selected (e.g. the current one was detached): chat and
   // sessions are blocked until the user actively opens or creates one.
-  const noProject = $derived(projects.length > 0 && !currentProjectId)
+  const noProject = $derived(projectsLoaded && !currentProjectId)
   const currentProject = $derived(projects.find((p) => p.id === currentProjectId) ?? null)
   // Display name of the active session for the mobile header pill.
   // get_state carries it cheaply; the (lazily loaded) sessions list is
@@ -2191,6 +2250,8 @@
     hiddenCount = 0
     sessions = []
     sessionsLoaded = true // nothing to load while detached: show the empty state
+    projectsLoaded = true
+    currentProjectId = ''
     currentSessionPath = ''
     stateSessionName = ''
     sessionPrompts = []
@@ -2428,6 +2489,7 @@
         toolsUsedInRun = true
         entries.push({
           role: 'tool',
+          toolCallId: ev.toolCallId ?? null,
           name: ev.toolName,
           args: ev.args,
           output: '',
@@ -2438,7 +2500,10 @@
         break
 
       case 'tool_execution_update': {
-        const t = entries.findLast((e) => e.role === 'tool' && !e.done)
+        const t =
+          (ev.toolCallId
+            ? entries.findLast((e) => e.role === 'tool' && e.toolCallId === ev.toolCallId)
+            : null) ?? entries.findLast((e) => e.role === 'tool' && !e.done)
         if (t) {
           t.output = (ev.partialResult?.content ?? [])
             .map((c) => c.text ?? '')
@@ -2449,7 +2514,10 @@
       }
 
       case 'tool_execution_end': {
-        const t = entries.findLast((e) => e.role === 'tool' && !e.done)
+        const t =
+          (ev.toolCallId
+            ? entries.findLast((e) => e.role === 'tool' && e.toolCallId === ev.toolCallId)
+            : null) ?? entries.findLast((e) => e.role === 'tool' && !e.done)
         if (t) {
           t.output = (ev.result?.content ?? []).map((c) => c.text ?? '').join('')
           t.done = true
@@ -2548,7 +2616,7 @@
         loadProjects()
         break
 
-      case 'project_switched':
+      case 'project_switched': {
         // Another tab (or client) switched the active project: our SSE
         // stream is attached to the now-dead pi process, so reconnect
         // and load the new project's state. Ignore our own switch —
@@ -2558,13 +2626,15 @@
           missedProjectSwitch = true
           break
         }
-        entries.push({
-          role: 'system',
-          text: `⇄ switched to project “${ev.project?.name ?? '?'}”`,
-        })
+        const switchedName = ev.project?.name ?? '?'
         reconnectEvents()
-        reinit()
+        // Append the notice *after* reinit() finishes (reinit resets entries = []).
+        reinit().then(() => {
+          entries.push({ role: 'system', text: `⇄ switched to project “${switchedName}”` })
+          scrollToBottom()
+        })
         break
+      }
 
       case 'pi_exited':
         // The pi subprocess died unexpectedly (crash, kill): the server
@@ -2716,7 +2786,8 @@
           entries.push({ role: 'user', text: message })
           const body = { message }
           if (streaming) body.streamingBehavior = 'steer'
-          await apiPost('/prompt', body)
+          const r = await apiPost('/prompt', body)
+          reportFailure(r, `command /${cmd} failed`)
         } else {
           const available = [
             ...BUILTIN_COMMANDS.map((c) => '/' + c.name),
@@ -2781,7 +2852,8 @@
 
   // pi cancels all running RPC bash commands at once.
   async function abortBash() {
-    await apiPost('/abort_bash')
+    const r = await apiPost('/abort_bash')
+    reportFailure(r, 'abort bash failed')
   }
 
   async function sendPrompt() {
@@ -2855,7 +2927,8 @@
   }
 
   async function abort() {
-    await apiPost('/abort')
+    const r = await apiPost('/abort')
+    reportFailure(r, 'abort failed')
   }
 
   async function newSession() {
@@ -3558,7 +3631,9 @@
         {:else if selectedFile}
           {#if selectedFile.image}
             <div class="filecontent image">
-              <img src={`/raw/${encPath(selectedFile.path)}?v=${selectedFile.v}`} alt={selectedFile.path} />
+              {#if rawToken}
+                <img src={`${rawUrl(selectedFile.path)}?v=${selectedFile.v}`} alt={selectedFile.path} />
+              {/if}
             </div>
           {:else if selectedFile.text !== null && isMarkdown(selectedFile.path) && !plainView}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -3566,7 +3641,9 @@
             <div class="filecontent md" onclick={(e) => onMdClick(e, selectedFile.path.split('/').slice(0, -1).join('/'))}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'), { remoteImages: true })}</div>
           {:else if selectedFile.text !== null && isHtml(selectedFile.path) && !plainView}
             <div class="filecontent html">
-              <iframe src={`/raw/${encPath(selectedFile.path)}?v=${selectedFile.v}`} sandbox="allow-scripts allow-forms" title={selectedFile.path}></iframe>
+              {#if rawToken}
+                <iframe src={`${rawUrl(selectedFile.path)}?v=${selectedFile.v}`} sandbox="allow-scripts allow-forms" title={selectedFile.path}></iframe>
+              {/if}
             </div>
           {:else if selectedFile.text !== null}
             <pre class="filecontent hljs" class:wrap={wrapView}><code>{@html highlight(selectedFile.text, selectedFile.path)}</code></pre>

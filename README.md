@@ -91,21 +91,26 @@ Non-browser clients (curl, pi tooling) don't send the header and are
 unaffected. Pages on other ports of the same host count as `same-site`
 and are not covered by this check. One deliberate exception: passive
 subresource loads (`<img>`, `<link>`, `<script>`, fonts, media) of
-`/raw/*` files are allowed even when labelled cross-site, because the
-sandboxed HTML-preview iframe has an opaque origin and browsers label
-everything it requests as cross-site — otherwise relative assets in a
-previewed HTML page could not load. Fetch Metadata cannot distinguish
-that sandbox from a remote page, so a remote page can probe whether a
-project file *exists* (via `<img onload>`), but still cannot read file
-contents or call any other endpoint.
+`/raw/<token>/*` files are allowed even when labelled cross-site,
+because the sandboxed HTML-preview iframe has an opaque origin and
+browsers label everything it requests as cross-site — otherwise
+relative assets in a previewed HTML page could not load. Because the
+`<token>` prefix is an unguessable per-process secret distributed only
+to the same-origin SPA (`/api/projects`, `/state`), remote pages cannot
+guess `/raw/` URLs to probe file existence or perform XSSI.
 Agent output is rendered without auto-loading remote images: `https:`
 images in chat messages become click-through links (a prompt-injected
 reply could otherwise exfiltrate data through the URL of an image the
-browser fetches on its own). The markdown file viewer does load them
-(README badges); `http:` images are blocked everywhere by CSP.
+browser fetches on its own), and alternate HTML/SVG subresource loaders
+(`srcset`, `poster`, `<picture>`, `<source>`, `<video>`, `<audio>`,
+`<svg><image>`, `<feImage>`, `<use>`, `<foreignObject>`) are stripped by
+DOMPurify. The markdown file viewer does load `https:` images (README
+badges); `http:` images are blocked everywhere by CSP.
 The app page is served with `Content-Security-Policy: frame-ancestors
 'none'` (plus `X-Frame-Options: DENY`), so other pages cannot embed it
-in an iframe and clickjack the UI.
+in an iframe and clickjack the UI. All responses additionally send
+`X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`,
+and API/dynamic responses send `Cache-Control: no-store`.
 Names the server cannot discover itself must be added explicitly via
 `PI_WEB_TRUSTED_HOSTS` (comma-separated; a leading dot matches all
 subdomains), otherwise such requests get a `400 Bad Request`. The
@@ -159,7 +164,9 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 | [`web/vite.config.js`](web/vite.config.js) | Vite config; dev-server proxy for the backend endpoints |
 | [`web/jsconfig.json`](web/jsconfig.json) | JS type-checking config (checkJs) for the frontend |
 | [`web/package.json`](web/package.json) | Frontend dependencies (svelte, vite, marked, dompurify, highlight.js, github-slugger) |
-| [`Makefile`](Makefile) | Build/run shortcuts (`build`, `run`, `dev`) |
+| [`gunicorn.conf.py`](gunicorn.conf.py) | Gunicorn config for `make serve` (1 worker, 64 threads, honors `HOST`/`PORT`/`.env` and loopback dual-bind) |
+| [`tests/test_app.py`](tests/test_app.py) | Backend unit and security test suite (mocked `PiProcess`, hermetic workspace) |
+| [`Makefile`](Makefile) | Build/run/test shortcuts (`build`, `run`, `dev`, `serve`, `test`, `check`, `audit`) |
 | [`doc/theme-preview.md`](doc/theme-preview.md) | Demo document for comparing the themes in the file viewer |
 | [`LICENSE`](LICENSE) | License |
 | [`requirements.txt`](requirements.txt) | Pinned Python dependencies (Flask, gunicorn, python-dotenv) |
@@ -232,7 +239,7 @@ File browser and static hosting:
 | `/api/file/delete` | POST | Delete a file (or directory tree) under the project root |
 | `/api/file/create` | POST | Create an empty file or directory under the project root (409 if it already exists) |
 | `/api/file/save` | POST | Save file content from edit mode (atomic write, permission-preserving; rejects with `conflict: true` when the disk content no longer matches the client's `base`, unless `force`) |
-| `/raw/<path>` | GET | Serve a file inline (image/HTML preview; nosniff + CSP sandbox) |
+| `/raw/<token>/<path>` | GET | Serve a file inline (image/HTML preview; per-process token + nosniff + CSP sandbox) |
 | `/download/<path>` | GET | Download a file |
 | `/` | GET | Serve the built SPA from `web/dist/` |
 
@@ -272,12 +279,14 @@ python app.py
 
 Or use the [Makefile](Makefile): `make build`, `make run` (rebuilds the
 frontend and starts the server in one step), `make dev` (Vite dev server),
-`make serve` (gunicorn, one worker with a thread pool — every open
-browser tab holds one thread for its event stream, so the pool is sized
-well above any realistic tab count; raising `-w` is not supported since
-the pi subprocess lives in the worker). `PORT=5001 make serve` starts a
-second, fully independent instance — each port has its own project
-registry, its own pi subprocess, and its own sessions.
+`make serve` (gunicorn via [`gunicorn.conf.py`](gunicorn.conf.py), one
+worker with a 64-thread pool — honoring `HOST`/`PORT`/`.env` and binding
+loopback alongside the LAN IP just like `python app.py`; every open
+browser tab holds one thread for its event stream, and raising `-w` is
+not supported since the pi subprocess lives in the worker).
+`PORT=5001 make serve` starts a second, fully independent instance —
+each port has its own project registry, its own pi subprocess, and its
+own sessions.
 
 Frontend development with hot module reload:
 
@@ -299,9 +308,10 @@ Two things to know:
   so newly added templates only appear after a restart or project
   switch.
 
-There is no automated test suite; verification is `make check`
-(`py_compile` + `ruff` + frontend build). Run `make audit` periodically
-to scan the pinned backend dependencies (pip-audit) and the frontend
-runtime dependencies (npm audit) for known vulnerabilities; it needs
-network access and `pip-audit` in the venv
-(`.venv/bin/python -m pip install -r requirements-dev.txt`).
+Run `make test` for the backend unit and security test suite
+([`tests/test_app.py`](tests/test_app.py), mocked `PiProcess`), and
+`make check` for full verification (`py_compile` + `ruff` + unit tests +
+frontend build). Run `make audit` periodically to scan the pinned
+backend dependencies (`pip-audit`) and frontend dependencies (`npm audit`)
+for known vulnerabilities; it needs network access and `pip-audit` in the
+venv (`.venv/bin/python -m pip install -r requirements-dev.txt`).

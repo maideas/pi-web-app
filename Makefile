@@ -1,11 +1,10 @@
-.PHONY: build run dev serve check audit
+.PHONY: build run dev serve test check audit
 
-HOST_IP = $(word 1, $(shell hostname -I))
 PORT = 5000
-# Exported so app.py sees the port it is bound to: the registry file name
-# is derived from it (projects-<port>.json). Command-line overrides
-# (make serve PORT=5001) are exported too — without this they only reach
-# the -b flag, not the environment.
+# Exported so app.py and gunicorn.conf.py see the port they are bound to:
+# the registry file name is derived from it (projects-<port>.json).
+# Command-line overrides (make serve PORT=5001) are exported too — without
+# this they only reach recipe expansions, not the child environment.
 export PORT
 
 # Build the frontend into web/dist/ (required; Flask serves only dist/)
@@ -16,27 +15,31 @@ build:
 run: build
 	.venv/bin/python app.py
 
-# Production-style server. Exactly ONE worker (the pi subprocess and all
-# bridge state are module globals). Every open browser tab pins one
-# gthread thread for its SSE stream, and once the pool is exhausted ALL
-# requests stall — so keep the thread count well above the number of
-# tabs you'll ever have open (threads are cheap here).
+# Production-style server. Configured via gunicorn.conf.py: exactly ONE
+# worker (the pi subprocess and all bridge state are module globals),
+# 64 threads (every open tab pins one for SSE), honoring HOST/.env and
+# binding loopback alongside the LAN IP just like `python app.py`.
 serve: build
-	.venv/bin/gunicorn -w 1 --threads 64 -b $(HOST_IP):$(PORT) app:app
+	.venv/bin/gunicorn -c gunicorn.conf.py app:app
 
 # Vite dev server with live reload (run `make run`/app.py alongside it)
 dev:
 	npm --prefix web run dev
 
-# Static verification: syntax, lint, frontend build
+# Backend unit & security tests (mocked pi subprocess, hermetic workspace)
+test:
+	.venv/bin/python -m unittest discover -s tests -v
+
+# Static verification: syntax, lint, tests, frontend build
 check:
-	python3 -m py_compile app.py
-	ruff check app.py
+	python3 -m py_compile app.py gunicorn.conf.py tests/test_app.py
+	ruff check app.py gunicorn.conf.py tests
+	.venv/bin/python -m unittest discover -s tests
 	npm --prefix web run build
 
-# Dependency vulnerability audit (backend pins + frontend runtime deps).
+# Dependency vulnerability audit (backend pins + all frontend deps).
 # Needs network access and pip-audit in the venv:
 #   .venv/bin/python -m pip install -r requirements-dev.txt
 audit:
 	.venv/bin/python -m pip_audit -r requirements.txt
-	npm --prefix web audit --omit=dev
+	npm --prefix web audit

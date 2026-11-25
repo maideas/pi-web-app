@@ -11,10 +11,13 @@ frontend notes.
   loopback-only, `HOST=0.0.0.0` for all interfaces — serves `web/dist/`).
   Python deps: `pip install -r requirements.txt`; `make audit` additionally
   needs `requirements-dev.txt` (pip-audit) in the venv.
-- `make serve` runs gunicorn with **one** worker (all bridge state and the
-  pi subprocess are module globals) and a thread pool; each open browser
-  tab pins one thread for its SSE stream and an exhausted pool stalls
-  every request — keep `--threads` generous, never raise `-w`.
+- `make serve` runs gunicorn via [gunicorn.conf.py](gunicorn.conf.py)
+  with **one** worker (all bridge state and the pi subprocess are module
+  globals) and a 64-thread pool, honoring `HOST`/`PORT`/`.env` and
+  binding loopback alongside the LAN IP just like `python app.py`. Each
+  open browser tab pins one thread for its SSE stream and an exhausted
+  pool stalls every request — keep `threads` generous, never raise
+  `workers`.
 - Multiple instances on different ports are supported and independent
   (`make serve PORT=5001`): the project registry is keyed by port
   (`projects-<port>.json` next to app.py), so instances never share
@@ -24,10 +27,11 @@ frontend notes.
   under `web/src/`**: `web/dist/` is gitignored, so Flask only serves
   what was last built. `npm run dev` gives a Vite dev server with a
   proxy to the backend for live reload.
-- There is no test suite yet; verification is `make check` (py_compile,
-  ruff, frontend build), plus manual testing against a running
-  instance. `make audit` scans dependencies for known vulnerabilities
-  (pip-audit + npm audit; needs network).
+- Verification is `make check` (`py_compile`, `ruff`, backend unit &
+  security tests in [tests/test_app.py](tests/test_app.py) via `make test`,
+  and frontend build), plus manual testing against a running instance.
+  `make audit` scans dependencies for known vulnerabilities (`pip-audit`
+  + full `npm audit`; needs network).
 
 ## Terminology
 
@@ -63,14 +67,18 @@ frontend notes.
   its document has an opaque origin and browsers send
   `Sec-Fetch-Site: cross-site` for *everything* it loads (verified in
   Chromium). The cross-site rejection in `request_origin_checks` therefore
-  exempts passive `no-cors` subresource loads of `/raw/*` — don't tighten
-  that without re-testing the HTML preview with relative assets.
+  exempts passive `no-cors` subresource loads of `/raw/<RAW_TOKEN>/*` —
+  requiring the per-process secret prefix blocks remote probing/XSSI
+  while relative assets inside the preview resolve automatically. Don't
+  tighten that without re-testing the HTML preview with relative assets.
 - Chat markdown must never auto-load remote images (exfiltration channel
   for prompt-injected agent output): `renderMarkdown` only allows them
-  with `{ remoteImages: true }`, which the file viewer passes. The whole
-  rendered document goes through DOMPurify (`MD_SANITIZE`); keep the
-  code-copy `<button>`, heading ids, `data-lang` and the alert `<svg>`
-  allowed when changing that config.
+  with `{ remoteImages: true }`, which the file viewer passes, strips
+  alternate HTML/SVG subresource loaders (`srcset`, `poster`, `<picture>`,
+  `<source>`, `<video>`, `<audio>`, `<svg><image>`, `<feImage>`, `<use>`,
+  `<foreignObject>`), and enforces `<img>` src rewriting on the parsed
+  DOMPurify fragment. Keep the code-copy `<button>`, heading ids,
+  `data-lang` and the alert `<svg>` allowed when changing `MD_SANITIZE`.
 
 ## pi RPC facts learned the hard way
 
