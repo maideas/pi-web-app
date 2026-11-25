@@ -471,7 +471,24 @@ def project_outside_workspace(entry: dict) -> bool:
         return True
 
 
-def resume_latest_session(p: PiProcess) -> None:
+def _canonical_session_path(sf: str | None) -> str | None:
+    """Resolve symlinks in a session file path (e.g. ~/.pi -> /mnt/...).
+
+    pi's default session dir comes from $HOME (unresolved), while
+    /switch_session validates and passes Path.resolve(). Canonicalizing
+    everywhere keeps session paths consistent across /state, /sessions,
+    lastSession, and the frontend's localStorage prompt-history keys,
+    even for unflushed new sessions whose file does not exist yet.
+    """
+    if not sf:
+        return None
+    try:
+        return str(Path(sf).resolve())
+    except OSError:
+        return sf
+
+
+def resume_latest_session(p: PiProcess, project: dict | None = None) -> None:
     """Point a freshly spawned pi at the project's selected session.
 
     Prefers the session the user last picked (persisted in the project
@@ -484,15 +501,18 @@ def resume_latest_session(p: PiProcess) -> None:
     resp = p.rpc_request({"type": "get_state"})
     if not resp.get("success"):
         return
-    sf = resp.get("data", {}).get("sessionFile")
+    sf = _canonical_session_path(resp.get("data", {}).get("sessionFile"))
     d = Path(sf).parent if sf else None
     if d is None or not d.is_dir():
         return
-    remembered = current["project"].get("lastSession")
+    remembered = (project or current["project"]).get("lastSession")
     if remembered:
-        f = Path(remembered)
+        try:
+            f = Path(remembered).resolve()
+        except OSError:
+            f = None
         # Only honor it if it still lives in this project's session dir.
-        if f.is_file() and f.parent == d and str(f) != sf:
+        if f is not None and f.is_file() and f.parent == d and str(f) != sf:
             p.rpc_request({"type": "switch_session", "sessionPath": str(f)})
             return
     try:
@@ -591,8 +611,9 @@ def pi() -> PiProcess:
         return p
     with switch_lock:
         if current["pi"] is p and not p.is_alive():
-            current["pi"] = PiProcess(current["project"]["path"])
-            resume_latest_session(current["pi"])
+            new_pi = PiProcess(current["project"]["path"])
+            resume_latest_session(new_pi, current["project"])
+            current["pi"] = new_pi
     return current["pi"]
 
 
@@ -777,7 +798,12 @@ def messages():
 
 @app.route("/state")
 def state():
-    return jsonify(pi().rpc_request({"type": "get_state"}))
+    resp = pi().rpc_request({"type": "get_state"})
+    if resp.get("success") and isinstance(resp.get("data"), dict):
+        sf = _canonical_session_path(resp["data"].get("sessionFile"))
+        if sf:
+            resp["data"]["sessionFile"] = sf
+    return jsonify(resp)
 
 
 @app.route("/stats")
@@ -865,16 +891,15 @@ def _session_name(f: Path, mtime: float, size: int) -> str | None:
 def sessions():
     state_resp = pi().rpc_request({"type": "get_state"})
     if not state_resp.get("success"):
-        return jsonify({"sessions": []})
-    sf = state_resp.get("data", {}).get("sessionFile")
-    d = Path(sf).parent if sf else None
+        return jsonify({"sessions": [], "currentSession": None})
+    current_sf = _canonical_session_path(state_resp.get("data", {}).get("sessionFile"))
+    d = Path(current_sf).parent if current_sf else None
     if d is None or not d.is_dir():
-        return jsonify({"sessions": []})
-    current_sf = sf
+        return jsonify({"sessions": [], "currentSession": current_sf})
     try:
         files = sorted(d.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)[:50]
     except OSError:
-        return jsonify({"sessions": []})
+        return jsonify({"sessions": [], "currentSession": current_sf})
     out = []
     for f in files:
         try:
@@ -892,7 +917,7 @@ def sessions():
             }
         )
     _prune_name_cache({s["path"] for s in out})
-    return jsonify({"sessions": out})
+    return jsonify({"sessions": out, "currentSession": current_sf})
 
 
 @app.route("/delete_sessions", methods=["POST"])
@@ -1328,6 +1353,14 @@ def open_project(pid):
             return jsonify({"success": True, "project": entry})
         old = current["pi"]
         new_pi = PiProcess(entry["path"])
+        try:
+            # Resume the project's session before publishing new_pi or
+            # notifying other tabs, so no request can observe the
+            # freshly spawned empty session.
+            resume_latest_session(new_pi, entry)
+        except Exception:
+            new_pi.stop()
+            raise
         # Remember as most-recently-opened (restored on next app start).
         for p in projects:
             if p["id"] == pid:
@@ -1336,12 +1369,7 @@ def open_project(pid):
         current["project"] = entry
         current["pi"] = new_pi
         old.broadcast({"type": "project_switched", "project": entry})
-        try:
-            resume_latest_session(new_pi)
-        finally:
-            # The switch has happened either way — never leave the old
-            # pi process running if resuming the session fails.
-            old.stop()
+        old.stop()
     return jsonify({"success": True, "project": entry})
 
 

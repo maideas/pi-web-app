@@ -326,6 +326,14 @@
     } else {
       reportFailure(resp, 'delete session failed') // e.g. 403/500 without a per-path error list
     }
+    if (resp.deleted?.includes(s.path)) {
+      const key = historyKey(s.path)
+      if (key) {
+        try {
+          localStorage.removeItem(key)
+        } catch {}
+      }
+    }
     await refreshSessions()
     // If the current session was deleted, move to the latest remaining
     // session (list is newest-first); if none is left, start a new one.
@@ -1726,16 +1734,31 @@
   let histIndex = -1 // -1 = not browsing
   let histDraft = ''
 
-  const historyKey = () => `promptHistory:${currentSessionPath || 'no-session'}`
+  // Never fall back to a shared key when no session path is known —
+  // doing so leaks prompts across projects/chats and later bakes them
+  // into the next session's history once its path resolves.
+  const historyKey = (path = currentSessionPath) => (path ? `promptHistory:${path}` : null)
+
+  function resetPromptHistory() {
+    promptHistory = []
+    histIndex = -1
+    histDraft = ''
+  }
 
   function loadPromptHistory() {
+    const key = historyKey()
+    if (!key) {
+      resetPromptHistory()
+      return
+    }
     try {
-      const parsed = JSON.parse(localStorage.getItem(historyKey()) ?? '[]')
+      const parsed = JSON.parse(localStorage.getItem(key) ?? '[]')
       promptHistory = Array.isArray(parsed) ? parsed.filter((t) => typeof t === 'string') : []
     } catch {
       promptHistory = []
     }
     histIndex = -1
+    histDraft = ''
   }
 
   // Seed the recall history with the prompts of the loaded session, so
@@ -1757,10 +1780,13 @@
     if (promptHistory[promptHistory.length - 1] !== text) {
       promptHistory.push(text)
       if (promptHistory.length > HISTORY_MAX) promptHistory = promptHistory.slice(-HISTORY_MAX)
-      try {
-        localStorage.setItem(historyKey(), JSON.stringify(promptHistory))
-      } catch (err) {
-        console.error('failed to persist prompt history', err)
+      const key = historyKey()
+      if (key) {
+        try {
+          localStorage.setItem(key, JSON.stringify(promptHistory))
+        } catch (err) {
+          console.error('failed to persist prompt history', err)
+        }
       }
     }
     histIndex = -1
@@ -1835,16 +1861,26 @@
     return true
   }
 
-  async function refreshState() {
+  // Generation counter for active project/session transitions: any async
+  // load from a superseded project or session switch bails out instead of
+  // overwriting the newer chat's messages, session path, or prompt history.
+  let chatSeq = 0
+  // Suppresses the project_switched SSE broadcast on the tab that
+  // initiated the switch (it reconnects and re-inits directly).
+  let switchingProject = false
+
+  async function refreshState(seq = null) {
     const resp = await apiGet('/state')
     if (!resp.success) return
+    if (seq !== null && seq !== chatSeq) return
     currentModel = resp.data.model
     thinkingLevel = resp.data.thinkingLevel
     // The active session path comes cheaply with /state; the sessions
     // list itself is loaded lazily (see ensureSessionsLoaded).
-    if (resp.data.sessionFile) currentSessionPath = resp.data.sessionFile
+    currentSessionPath = resp.data.sessionFile ?? ''
     stateSessionName = resp.data.sessionName ?? ''
     const levels = await apiGet('/thinking_levels')
+    if (seq !== null && seq !== chatSeq) return
     if (levels.success) thinkingLevels = levels.data.levels
   }
 
@@ -1872,6 +1908,27 @@
   // Guard against out-of-order responses: only the latest request may
   // update the sessions list / current marker.
   let sessionsReq = 0
+  let sessionsIdleCancel = null
+  function cancelSessionsIdle() {
+    sessionsIdleCancel?.()
+    sessionsIdleCancel = null
+  }
+  function scheduleSessionsLoad() {
+    cancelSessionsIdle()
+    if (window.requestIdleCallback) {
+      const id = window.requestIdleCallback(() => {
+        sessionsIdleCancel = null
+        ensureSessionsLoaded()
+      })
+      sessionsIdleCancel = () => window.cancelIdleCallback(id)
+    } else {
+      const id = setTimeout(() => {
+        sessionsIdleCancel = null
+        ensureSessionsLoaded()
+      }, 200)
+      sessionsIdleCancel = () => clearTimeout(id)
+    }
+  }
   // Lazy sessions pane: the list is sidebar-only and /sessions scans
   // session files (name resolution) — don't load it on the critical
   // path of a project switch. Loaded when the pane becomes visible
@@ -1888,7 +1945,15 @@
     if (id !== sessionsReq) return
     sessions = resp.sessions ?? []
     sessionsLoaded = true
-    currentSessionPath = sessions.find((s) => s.current)?.path ?? ''
+    // Prefer currentSession from get_state over matching the top-50 file
+    // listing: brand-new sessions aren't flushed to disk until the first
+    // message, so they don't appear in `sessions` yet.
+    const nextPath = resp.currentSession ?? sessions.find((s) => s.current)?.path ?? ''
+    if (nextPath !== currentSessionPath) {
+      currentSessionPath = nextPath
+      sessionPrompts = []
+      loadPromptHistory()
+    }
   }
 
   async function onModelChange(e) {
@@ -1928,11 +1993,18 @@
   // Full (re)initialization: after mount, a project switch, or a
   // project_switched event from another tab.
   async function reinit() {
+    const seq = ++chatSeq
+    ++sessionsReq
+    cancelSessionsIdle()
     entries = []
     hiddenCount = 0
     attachments = []
     sessions = []
     sessionsLoaded = false
+    currentSessionPath = ''
+    stateSessionName = ''
+    sessionPrompts = []
+    resetPromptHistory()
     // The stream this UI tracked is gone (project switch, pi exit,
     // overflow reconnect); a fresh agent_start re-enables it when a run
     // is actually active on the new stream.
@@ -1951,14 +2023,17 @@
     viewerFuture = []
     toolsUsedInRun = false
     await browse('')
-    await loadHistory()
+    if (seq !== chatSeq) return
+    await loadHistory(seq)
+    if (seq !== chatSeq) return
     await Promise.all([
-      refreshState(),
+      refreshState(seq),
       refreshModels(),
       refreshStats(),
       loadCommands(),
       loadProjects(),
     ])
+    if (seq !== chatSeq) return
     loadPromptHistory() // per session; needs currentSessionPath (set by refreshState)
     mergeSessionPrompts() // seed recall from the resumed session's prompts
     loadSidebarState() // sidebar collapse state is per project too
@@ -1966,6 +2041,7 @@
     // projects pane — scroll it into view, on app start and on every
     // project switch alike. Wait a tick for the list to render.
     await tick()
+    if (seq !== chatSeq) return
     keepSelectedVisible('.sb-projects .sb-list', '.sb-item.current')
     // Restore the project's remembered viewer file, README as fallback.
     const remembered = projects.find((p) => p.current)?.lastFile ?? 'README.md'
@@ -1973,12 +2049,14 @@
     let f
     try {
       f = await loadViewerFile(remembered)
+      if (seq !== chatSeq) return
       if ((!f.path || f.error) && remembered !== 'README.md') {
         f = await loadViewerFile('README.md')
       }
     } finally {
-      viewerLoading = false
+      if (seq === chatSeq) viewerLoading = false
     }
+    if (seq !== chatSeq) return
     if (f.path && !f.error) {
       selectedFile = f
       // Show the file's directory in the browser (also highlights it)
@@ -1988,7 +2066,9 @@
       // root listing scrolls to them as well.
       const dir = f.path.split('/').slice(0, -1).join('/')
       await browse(dir)
+      if (seq !== chatSeq) return
       await tick()
+      if (seq !== chatSeq) return
       document
         .querySelector('.browser-body .dirlist .direntry.selected')
         ?.scrollIntoView({ block: 'nearest' })
@@ -1997,24 +2077,28 @@
     // once the browser is idle (off the switch's critical path); if
     // not, the sidebar-expand / mobile-view triggers load it on demand.
     if (!isMobile && !sidebarCollapsed) {
-      const ric = window.requestIdleCallback ?? ((f) => setTimeout(f, 200))
-      ric(() => ensureSessionsLoaded())
+      scheduleSessionsLoad()
     }
   }
 
   async function switchProject(id) {
     if (!quitEdit()) return
-    const resp = await apiPost(`/api/projects/${id}/open`)
-    if (!resp.success) {
-      entries.push({ role: 'system', text: `⚠️ ${resp.error ?? 'failed to open project'}` })
-      await loadProjects() // reset the select to the real current project
-      return
+    switchingProject = true
+    try {
+      const resp = await apiPost(`/api/projects/${id}/open`)
+      if (!resp.success) {
+        entries.push({ role: 'system', text: `⚠️ ${resp.error ?? 'failed to open project'}` })
+        await loadProjects() // reset the select to the real current project
+        return
+      }
+      // Our SSE stream is still subscribed to the now-terminated old pi
+      // process — reconnect before clearing switchingProject so the
+      // project_switched broadcast on the old stream never triggers a
+      // duplicate reinit().
+      reconnectEvents()
+    } finally {
+      switchingProject = false
     }
-    // Our SSE stream is still subscribed to the now-terminated old pi
-    // process — reconnect, or we won't see any events from the new one.
-    // (Other tabs learn via the project_switched event; the initiating
-    // tab must reconnect itself.)
-    reconnectEvents()
     await reinit()
     inputEl?.focus()
   }
@@ -2055,6 +2139,9 @@
   // Local UI reset after the current project was detached (by this tab
   // or another one): clear the chat and wait for an explicit choice.
   function enterDetachedMode(name) {
+    ++chatSeq
+    ++sessionsReq
+    cancelSessionsIdle()
     entries = [
       { role: 'system', text: `✖ project “${name}” was detached — select a project on the left or create a new one` },
     ]
@@ -2062,6 +2149,9 @@
     sessions = []
     sessionsLoaded = true // nothing to load while detached: show the empty state
     currentSessionPath = ''
+    stateSessionName = ''
+    sessionPrompts = []
+    resetPromptHistory()
     quitEdit({ force: true }) // no active project, nowhere to save to
     selectedFile = null
     diffView = null
@@ -2152,17 +2242,28 @@
   }
 
   async function switchToSession(path) {
+    const seq = ++chatSeq
     const resp = await apiPost('/switch_session', { path })
+    if (seq !== chatSeq) return
     reportFailure(resp, 'session switch failed')
     if (resp.success && !resp.data?.cancelled) {
-      currentSessionPath = path
+      ++sessionsReq
+      cancelSessionsIdle()
+      currentSessionPath = ''
+      stateSessionName = ''
       entries = []
       hiddenCount = 0
-      await loadHistory()
+      sessionPrompts = []
+      resetPromptHistory()
+      await Promise.all([
+        loadHistory(seq),
+        refreshState(seq),
+        refreshStats(),
+      ])
+      if (seq !== chatSeq) return
+      if (!currentSessionPath) currentSessionPath = path
       loadPromptHistory()
       mergeSessionPrompts()
-      await refreshState()
-      await refreshStats()
       inputEl?.focus()
       if (isMobile) mobileView = 'chat'
     }
@@ -2402,7 +2503,9 @@
       case 'project_switched':
         // Another tab (or client) switched the active project: our SSE
         // stream is attached to the now-dead pi process, so reconnect
-        // and load the new project's state.
+        // and load the new project's state. Ignore our own switch —
+        // switchProject() handles reconnect + reinit directly.
+        if (switchingProject) break
         entries.push({
           role: 'system',
           text: `⇄ switched to project “${ev.project?.name ?? '?'}”`,
@@ -2705,21 +2808,30 @@
 
   async function newSession() {
     if (noProject) return
-    await apiPost('/new_session')
+    const seq = ++chatSeq
+    const resp = await apiPost('/new_session')
+    if (seq !== chatSeq) return
+    if (reportFailure(resp, 'new session failed') || resp.data?.cancelled) return
+    ++sessionsReq
+    cancelSessionsIdle()
     entries = []
     hiddenCount = 0
+    currentSessionPath = ''
+    stateSessionName = ''
     sessionPrompts = [] // no loadHistory here; drop the old session's prompts
+    resetPromptHistory()
     await refreshSessions()
+    if (seq !== chatSeq) return
     loadPromptHistory() // re-key to the fresh session
     await refreshStats()
     if (isMobile) mobileView = 'chat' // jump to the fresh empty chat
     inputEl?.focus()
   }
 
-  async function loadHistory() {
+  async function loadHistory(seq = chatSeq) {
     sessionPrompts = []
     const resp = await apiGet('/messages')
-    if (!resp.success) return
+    if (!resp.success || seq !== chatSeq) return
     // Tool arguments live in the assistant message's toolCall blocks —
     // toolResult messages only carry the output. Index them by call id
     // so reloaded tool entries show the blue command like live ones do.
@@ -2821,6 +2933,9 @@
   }
 
   onMount(() => {
+    // Drop the legacy shared fallback bucket so old cross-project prompts
+    // don't linger in storage.
+    try { localStorage.removeItem('promptHistory:no-session') } catch {}
     reinit() // also shows the project README in the file viewer, if present
     reconnectEvents()
     inputEl?.focus()
@@ -2829,6 +2944,7 @@
     const onMq = (e) => { isMobile = e.matches }
     mq.addEventListener('change', onMq)
     return () => {
+      cancelSessionsIdle()
       eventSource?.close()
       mq.removeEventListener('change', onMq)
     }
