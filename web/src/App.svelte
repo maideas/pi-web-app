@@ -1861,26 +1861,44 @@
     return true
   }
 
-  // Generation counter for active project/session transitions: any async
-  // load from a superseded project or session switch bails out instead of
-  // overwriting the newer chat's messages, session path, or prompt history.
+  // Two generation counters, one per scope, so async loads from a
+  // superseded transition bail out instead of overwriting newer state:
+  // - chatSeq guards session-scoped data (messages, session path,
+  //   prompt history). Bumped by every session change — and by project
+  //   changes, which replace the session too.
+  // - projectSeq guards project-scoped data (models, projects list,
+  //   sidebar state, viewer file). Bumped by project changes only, so
+  //   a session switch never cancels the rest of a running reinit().
+  // Session actions bump chatSeq only after their POST succeeded: a
+  // failed or cancelled request must not kill an in-flight load that
+  // nothing would then redo.
   let chatSeq = 0
+  let projectSeq = 0
   // Suppresses the project_switched SSE broadcast on the tab that
-  // initiated the switch (it reconnects and re-inits directly).
+  // initiated the switch (it reconnects and re-inits directly). A
+  // suppressed event is remembered: if our own request then fails, a
+  // switch happened nonetheless (another tab's, or ours with a lost
+  // response) and switchProject() must still reload everything.
   let switchingProject = false
+  let missedProjectSwitch = false
 
-  async function refreshState(seq = null) {
+  // seq guards the session-scoped fields against a superseded session
+  // transition, pseq everything against a superseded project
+  // transition; null = unguarded.
+  async function refreshState(seq = null, pseq = null) {
     const resp = await apiGet('/state')
     if (!resp.success) return
-    if (seq !== null && seq !== chatSeq) return
+    if (pseq !== null && pseq !== projectSeq) return
     currentModel = resp.data.model
     thinkingLevel = resp.data.thinkingLevel
-    // The active session path comes cheaply with /state; the sessions
-    // list itself is loaded lazily (see ensureSessionsLoaded).
-    currentSessionPath = resp.data.sessionFile ?? ''
-    stateSessionName = resp.data.sessionName ?? ''
+    if (seq === null || seq === chatSeq) {
+      // The active session path comes cheaply with /state; the sessions
+      // list itself is loaded lazily (see ensureSessionsLoaded).
+      currentSessionPath = resp.data.sessionFile ?? ''
+      stateSessionName = resp.data.sessionName ?? ''
+    }
     const levels = await apiGet('/thinking_levels')
-    if (seq !== null && seq !== chatSeq) return
+    if (pseq !== null && pseq !== projectSeq) return
     if (levels.success) thinkingLevels = levels.data.levels
   }
 
@@ -1993,6 +2011,7 @@
   // Full (re)initialization: after mount, a project switch, or a
   // project_switched event from another tab.
   async function reinit() {
+    const pseq = ++projectSeq
     const seq = ++chatSeq
     ++sessionsReq
     cancelSessionsIdle()
@@ -2023,25 +2042,30 @@
     viewerFuture = []
     toolsUsedInRun = false
     await browse('')
-    if (seq !== chatSeq) return
+    if (pseq !== projectSeq) return
+    // Session-scoped steps (seq) skip themselves when a session switch
+    // or new session took over meanwhile — that action loads its own
+    // chat; the project-scoped rest below must still run.
     await loadHistory(seq)
-    if (seq !== chatSeq) return
+    if (pseq !== projectSeq) return
     await Promise.all([
-      refreshState(seq),
+      refreshState(seq, pseq),
       refreshModels(),
       refreshStats(),
       loadCommands(),
       loadProjects(),
     ])
-    if (seq !== chatSeq) return
-    loadPromptHistory() // per session; needs currentSessionPath (set by refreshState)
-    mergeSessionPrompts() // seed recall from the resumed session's prompts
+    if (pseq !== projectSeq) return
+    if (seq === chatSeq) {
+      loadPromptHistory() // per session; needs currentSessionPath (set by refreshState)
+      mergeSessionPrompts() // seed recall from the resumed session's prompts
+    }
     loadSidebarState() // sidebar collapse state is per project too
     // The current project can sit below the fold of the (collapsed)
     // projects pane — scroll it into view, on app start and on every
     // project switch alike. Wait a tick for the list to render.
     await tick()
-    if (seq !== chatSeq) return
+    if (pseq !== projectSeq) return
     keepSelectedVisible('.sb-projects .sb-list', '.sb-item.current')
     // Restore the project's remembered viewer file, README as fallback.
     const remembered = projects.find((p) => p.current)?.lastFile ?? 'README.md'
@@ -2049,14 +2073,16 @@
     let f
     try {
       f = await loadViewerFile(remembered)
-      if (seq !== chatSeq) return
+      if (pseq !== projectSeq) return
       if ((!f.path || f.error) && remembered !== 'README.md') {
         f = await loadViewerFile('README.md')
       }
     } finally {
-      if (seq === chatSeq) viewerLoading = false
+      // A newer reinit() owns the spinner now (enterDetachedMode
+      // clears it itself).
+      if (pseq === projectSeq) viewerLoading = false
     }
-    if (seq !== chatSeq) return
+    if (pseq !== projectSeq) return
     if (f.path && !f.error) {
       selectedFile = f
       // Show the file's directory in the browser (also highlights it)
@@ -2066,9 +2092,9 @@
       // root listing scrolls to them as well.
       const dir = f.path.split('/').slice(0, -1).join('/')
       await browse(dir)
-      if (seq !== chatSeq) return
+      if (pseq !== projectSeq) return
       await tick()
-      if (seq !== chatSeq) return
+      if (pseq !== projectSeq) return
       document
         .querySelector('.browser-body .dirlist .direntry.selected')
         ?.scrollIntoView({ block: 'nearest' })
@@ -2084,20 +2110,36 @@
   async function switchProject(id) {
     if (!quitEdit()) return
     switchingProject = true
+    let resp
     try {
-      const resp = await apiPost(`/api/projects/${id}/open`)
-      if (!resp.success) {
-        entries.push({ role: 'system', text: `⚠️ ${resp.error ?? 'failed to open project'}` })
-        await loadProjects() // reset the select to the real current project
-        return
-      }
+      resp = await apiPost(`/api/projects/${id}/open`)
       // Our SSE stream is still subscribed to the now-terminated old pi
       // process — reconnect before clearing switchingProject so the
       // project_switched broadcast on the old stream never triggers a
       // duplicate reinit().
-      reconnectEvents()
+      if (resp.success) reconnectEvents()
     } finally {
       switchingProject = false
+    }
+    const missed = missedProjectSwitch
+    missedProjectSwitch = false
+    if (!resp.success) {
+      const text = `⚠️ ${resp.error ?? 'failed to open project'}`
+      if (!missed) {
+        entries.push({ role: 'system', text })
+        await loadProjects() // reset the select to the real current project
+        return
+      }
+      // Our request failed, but the active project changed while it was
+      // pending and we ignored the event: this tab still shows the old
+      // project's chat, session path and prompt history on a dead
+      // stream. Reload everything (also resets the projects list), then
+      // report the failure — reinit() clears the chat first.
+      reconnectEvents()
+      await reinit()
+      entries.push({ role: 'system', text })
+      scrollToBottom()
+      return
     }
     await reinit()
     inputEl?.focus()
@@ -2139,6 +2181,7 @@
   // Local UI reset after the current project was detached (by this tab
   // or another one): clear the chat and wait for an explicit choice.
   function enterDetachedMode(name) {
+    ++projectSeq
     ++chatSeq
     ++sessionsReq
     cancelSessionsIdle()
@@ -2154,6 +2197,7 @@
     resetPromptHistory()
     quitEdit({ force: true }) // no active project, nowhere to save to
     selectedFile = null
+    viewerLoading = false // a superseded reinit() no longer clears it
     diffView = null
     dirEntries = []
     browserPath = ''
@@ -2242,11 +2286,15 @@
   }
 
   async function switchToSession(path) {
-    const seq = ++chatSeq
+    const pseq = projectSeq
     const resp = await apiPost('/switch_session', { path })
-    if (seq !== chatSeq) return
+    // The project changed while the request was pending: reinit() loads
+    // the real state, and `path` belongs to the old project.
+    if (pseq !== projectSeq) return
     reportFailure(resp, 'session switch failed')
     if (resp.success && !resp.data?.cancelled) {
+      // Only now supersede in-flight session loads (see chatSeq).
+      const seq = ++chatSeq
       ++sessionsReq
       cancelSessionsIdle()
       currentSessionPath = ''
@@ -2257,7 +2305,7 @@
       resetPromptHistory()
       await Promise.all([
         loadHistory(seq),
-        refreshState(seq),
+        refreshState(seq, pseq),
         refreshStats(),
       ])
       if (seq !== chatSeq) return
@@ -2504,8 +2552,12 @@
         // Another tab (or client) switched the active project: our SSE
         // stream is attached to the now-dead pi process, so reconnect
         // and load the new project's state. Ignore our own switch —
-        // switchProject() handles reconnect + reinit directly.
-        if (switchingProject) break
+        // switchProject() handles reconnect + reinit directly, also
+        // for an ignored event when its own request fails.
+        if (switchingProject) {
+          missedProjectSwitch = true
+          break
+        }
         entries.push({
           role: 'system',
           text: `⇄ switched to project “${ev.project?.name ?? '?'}”`,
@@ -2808,10 +2860,14 @@
 
   async function newSession() {
     if (noProject) return
-    const seq = ++chatSeq
+    const pseq = projectSeq
     const resp = await apiPost('/new_session')
-    if (seq !== chatSeq) return
+    // The project changed while the request was pending: reinit() loads
+    // the real state.
+    if (pseq !== projectSeq) return
     if (reportFailure(resp, 'new session failed') || resp.data?.cancelled) return
+    // Only now supersede in-flight session loads (see chatSeq).
+    const seq = ++chatSeq
     ++sessionsReq
     cancelSessionsIdle()
     entries = []
@@ -2829,6 +2885,9 @@
   }
 
   async function loadHistory(seq = chatSeq) {
+    // Superseded before it even started (e.g. reinit() reaching this
+    // step after a session switch finished): leave the newer chat alone.
+    if (seq !== chatSeq) return
     sessionPrompts = []
     const resp = await apiGet('/messages')
     if (!resp.success || seq !== chatSeq) return
