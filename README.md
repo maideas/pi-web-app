@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="web/public/logo.svg" width="128" alt="pi web UI logo">
+  <img src="web/public/logo.svg" width="128" alt="pi agent web UI logo">
 </p>
 
 <p align="center">
@@ -8,126 +8,216 @@
 
 # pi agent web UI
 
-A browser-based chat interface for the [pi coding agent](https://github.com/earendil-works/pi).
+A browser-based chat interface for the
+[pi coding agent](https://github.com/earendil-works/pi).
+
+Run the server next to your project directories, open it in any browser
+on your network, and drive pi from there — chat with markdown rendering
+and syntax highlighting, browse and edit project files, switch between
+projects and sessions, and watch the agent's tool output stream in live.
+
+```
+Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode rpc
+```
+
 A small Flask backend ([`app.py`](app.py)) bridges the browser to a
 `pi --mode rpc` subprocess: the browser talks SSE/REST to Flask, and Flask
-talks JSONL (newline-delimited JSON) to pi's stdin/stdout.
+talks JSONL (newline-delimited JSON) to pi's stdin/stdout. The frontend is
+a Svelte 5 + Vite single-page app in [`web/`](web/) (see
+[web/README.md](web/README.md) for frontend notes), built into
+`web/dist/`, which Flask serves.
 
-Features:
+> **One instance hosts one active project.** A single pi subprocess and a
+> shared event stream serve all connected tabs — by design. To run agents
+> in several projects at once, start additional instances on other ports
+> (`PORT=5001 make serve`). Instances are fully independent: the project
+> registry is keyed by port (`projects-<port>.json` next to
+> [`app.py`](app.py)), so they share no state. Never register the same
+> project on two instances — two agents in one worktree will step on
+> each other.
 
-- Chat with markdown rendering, syntax highlighting, collapsible
-  thinking/tool blocks, and copy buttons for messages and code blocks
-- Shell-style prompt history recall (ArrowUp/ArrowDown, per session)
-  and a message navigator for jumping to earlier user messages
-- Steerable: the input stays usable while the agent works — send to
+## Quick start
+
+Prerequisites: **Python 3**, **Node.js/npm**, and **`pi` on `PATH`**.
+
+```sh
+# 1. Backend dependencies (once)
+python3 -m venv .venv && source .venv/bin/activate
+python -m pip install -r requirements.txt
+
+# 2. Build the frontend (Flask serves only the built web/dist/)
+cd web && npm install && npm run build && cd ..
+
+# 3. Run
+python app.py
+```
+
+Then open **http://localhost:5000** (or the machine's LAN address — see
+[security](#security) below before exposing it). Use the **Projects**
+sidebar to register or create a project directory, then start chatting.
+
+### Configuration
+
+All settings can be passed as environment variables or kept in a local,
+gitignored `.env` (copy from [`.env.example`](.env.example); real
+environment variables take precedence):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HOST` | primary LAN IP + loopback | `127.0.0.1` restricts to loopback, `0.0.0.0` opens all interfaces (dangerous — see [security](#security)) |
+| `PORT` | `5000` | Also selects the per-instance registry file (`projects-<port>.json`) |
+| `PI_WEB_WORKSPACE` | parent of the app dir | Confines projects and the file browser to this directory |
+| `PI_WEB_TRUSTED_HOSTS` | — | Extra accepted Host headers, comma-separated (leading dot matches subdomains) |
+
+### Shortcuts
+
+The [Makefile](Makefile) wraps the common workflows:
+
+```sh
+make run     # rebuild frontend + start the dev server
+make serve  # gunicorn (via gunicorn.conf.py): 1 worker, 64 threads
+make dev    # Vite dev server with hot reload (keep app.py running alongside)
+make check  # full verification: syntax, lint, tests, frontend build
+make audit  # dependency vulnerability scan (needs network + pip-audit)
+```
+
+`make serve` runs gunicorn via [`gunicorn.conf.py`](gunicorn.conf.py) —
+exactly **one** worker (the pi subprocess and all bridge state are module
+globals) with a 64-thread pool. Every open browser tab pins one thread for
+its SSE stream, so keep `threads` generous and never raise `workers`.
+`PORT=5001 make serve` starts a second, fully independent instance with
+its own registry, pi subprocess, and sessions.
+
+## Features
+
+### Chat
+
+- Markdown rendering, syntax highlighting, collapsible
+  thinking/tool blocks, copy buttons for messages and code blocks
+- **Steerable:** the input stays usable while the agent works — send to
   queue a steering message, or abort
 - Image and text-file attachments
 - Model and thinking-level selectors, live token/cost/context stats
-- Multiple projects and sessions: switch projects; create, register,
-  or clone (git URL) project directories; restore the last
-  session and open file; sessions live in a collapsible sidebar
-  (collapse state remembered per project), are auto-named from chat
-  content, and can be deleted from a per-session menu. The projects
-  section grows on hover (up to 80% of the window height) when not
-  all entries fit, easing back when the mouse leaves
+
+### Projects and sessions
+
+- Multiple projects: switch between them; create, register, or clone
+  (git URL) project directories
+- Multiple sessions: sessions live in a collapsible sidebar (collapse
+  state remembered per project), are auto-named from chat content, and
+  can be deleted from a per-session menu
+- The last session and open file are restored on reload
+- The projects section grows on hover (up to 80% of the window height)
+  when not all entries fit, easing back when the mouse leaves
+
+### Slash commands and shell
+
 - Slash commands with autocomplete, mapped to their RPC equivalents;
   extension commands run inside pi, and their notifications
   (`ctx.ui.notify`, e.g. the output of a local `/git-status` command)
   show up in the chat — multi-line output as a collapsible block
-- Shell commands: `!cmd` runs a command in the project directory with
+- `!cmd` runs a shell command in the project directory with
   live-streamed output and adds the result to the model context with
   the next prompt; `!!cmd` runs it locally only (the model never sees
   it). Results persist in the session and render after reload
+- Shell-style prompt history recall (ArrowUp/ArrowDown, per session)
+  and a message navigator for jumping to earlier user messages
+
+### Files
+
 - Project file browser with markdown (incl. working in-page anchor
   links), HTML, and image preview, git status badges, an in-file
   git diff view (full file, changed lines highlighted), download, and
-  delete. The browser pane expands on hover to fit its entries
-  (re-measured on directory change, max 80% of the window height)
-  and eases back when the mouse leaves
-- Text edit mode for the file viewer: syntax-highlighted editor
-  (highlighted underlay + transparent textarea) with Ctrl+S save, Esc
-  quit, and optimistic concurrency against agent-side edits — a save
-  that would clobber changes made on disk is rejected with a conflict,
-  and the editor offers overwrite / reload / keep editing
-- Mobile layout (screens ≤ 1024px wide): one full-screen pane at a
-  time, switched via a slide-in menu (opened from a floating
-  hamburger button) with Projects, Sessions, Messages, Chat and
-  Files views (the file viewer is reached by tapping a file in
-  Files); the menu also hosts the model and thinking-level
-  selectors. Selecting a session or file jumps to the chat / file
-  viewer automatically
+  delete. The browser pane expands on hover (re-measured on directory
+  change, max 80% of the window height) and eases back when the mouse
+  leaves
+- **Text edit mode:** a syntax-highlighted editor (highlighted
+  underlay + transparent textarea) with Ctrl+S save, Esc quit, and
+  optimistic concurrency against agent-side edits — a save that would
+  clobber changes made on disk is rejected with a conflict, and the
+  editor offers overwrite / reload / keep editing
+
+### Layout and themes
+
+- Mobile layout (screens ≤ 1024px): one full-screen pane at a time,
+  switched via a slide-in menu (Projects, Sessions, Messages, Chat,
+  Files; the file viewer is reached by tapping a file in Files), which
+  also hosts the model and thinking-level selectors. Selecting a session
+  or file jumps to the chat / file viewer automatically
 - Light, cream, and dark themes
 
-**Limitation (by design):** single-user. One pi subprocess and one shared
-event stream serve all connected browser tabs. One instance hosts one
-active project; to run agents in several projects at once, start
-additional instances on other ports (`PORT=5001 make serve`) — the
-project registry is keyed by port (`projects-<port>.json`), so instances
-share no state. Don't register the same project on two instances:
-two agents editing one worktree will step on each other.
+## Security
 
-**Security model:** by default the server binds the machine's primary
-LAN IP plus a separate loopback listener (so both `localhost:5000` and
-the LAN address work without listening on *all* interfaces) and has no
-authentication — it assumes a trusted network. Anyone who can reach the
-port (other local users, but also other machines on the LAN) can drive
-the agent with full tool access and run arbitrary shell commands
-directly (`/bash` endpoint). Set `HOST=127.0.0.1` to restrict the
-server to loopback (`HOST=0.0.0.0` opens every interface — see
-[`.env.example`](.env.example)), and do not port-forward or
-reverse-proxy it without adding authentication. Host-header validation (`TRUSTED_HOSTS`:
-dynamically evaluated per request against loopback, localhost, machine
-hostnames, mDNS `.local`, and all active interface/route IPs) protects
-against DNS-rebinding attacks from remote web pages while remaining
-resilient across DHCP address changes and multi-homed network setups.
-Host validation covers attacker-controlled *names*; requests that
-directly address the server by its raw IP can still be sent by remote
-pages, so all endpoints additionally reject requests that modern
-browsers mark as `Sec-Fetch-Site: cross-site` (403) — a remote page
-cannot probe the LAN endpoint with `<img>`/`<script>` subresource
-requests, which couldn't carry a CSRF header. Top-level GET navigations
-(following a link to the app from another site) stay allowed.
-Non-browser clients (curl, pi tooling) don't send the header and are
-unaffected. Pages on other ports of the same host count as `same-site`
-and are not covered by this check. One deliberate exception: passive
-subresource loads (`<img>`, `<link>`, `<script>`, fonts, media) of
-`/raw/<token>/*` files are allowed even when labelled cross-site,
-because the sandboxed HTML-preview iframe has an opaque origin and
-browsers label everything it requests as cross-site — otherwise
-relative assets in a previewed HTML page could not load. Because the
-`<token>` prefix is an unguessable per-process secret distributed only
-to the same-origin SPA (`/api/projects`, `/state`), remote pages cannot
-guess `/raw/` URLs to probe file existence or perform XSSI.
-Agent output is rendered without auto-loading remote images: `https:`
-images in chat messages become click-through links (a prompt-injected
-reply could otherwise exfiltrate data through the URL of an image the
-browser fetches on its own), and alternate HTML/SVG subresource loaders
-(`srcset`, `poster`, `<picture>`, `<source>`, `<video>`, `<audio>`,
-`<svg><image>`, `<feImage>`, `<use>`, `<foreignObject>`) are stripped by
-DOMPurify. The markdown file viewer does load `https:` images (README
-badges); `http:` images are blocked everywhere by CSP.
-The app page is served with `Content-Security-Policy: frame-ancestors
-'none'` (plus `X-Frame-Options: DENY`), so other pages cannot embed it
-in an iframe and clickjack the UI. All responses additionally send
-`X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`,
-and API/dynamic responses send `Cache-Control: no-store`.
-Names the server cannot discover itself must be added explicitly via
-`PI_WEB_TRUSTED_HOSTS` (comma-separated; a leading dot matches all
-subdomains), otherwise such requests get a `400 Bad Request`. The
-typical case is a systemd-nspawn container addressed by its machine name
-via `nss-mymachines`: that name is only resolvable on the host, so the
-container has no way to learn it. Such machine-local settings live in
-an unmanaged `.env` next to [`app.py`](app.py) — gitignored, loaded via
-python-dotenv, real environment variables take precedence; the tracked
-[`.env.example`](.env.example) documents the available variables in
-comments.
+Read this before exposing the server beyond loopback. The server has
+**no authentication** and assumes a **trusted network**: anyone who can
+reach the port (other local users, but also other machines on the LAN)
+can drive the agent with full tool access and run arbitrary shell
+commands directly (the `/bash` endpoint).
 
-**Workspace containment:** all web endpoints that touch the filesystem
-(project registration, directory picker, file browser, preview, diff,
-delete, download) are confined to a workspace root — the parent
-directory of the app by default, overridable with the
-`PI_WEB_WORKSPACE` environment variable. Registry entries outside the
-workspace (stale or hand-edited) are flagged in the UI, cannot be
+- By default the server binds the machine's **primary LAN IP plus a
+  separate loopback listener** (so both `localhost:5000` and the LAN
+  address work without listening on *all* interfaces). Set
+  `HOST=127.0.0.1` to restrict to loopback; `HOST=0.0.0.0` opens every
+  interface. Do **not** port-forward or reverse-proxy the app without
+  adding authentication.
+
+### DNS-rebinding and cross-site protection
+
+- **Host-header validation** (`TRUSTED_HOSTS`, overridable via
+  `PI_WEB_TRUSTED_HOSTS`): every request's Host header is checked
+  dynamically against loopback, localhost, machine hostnames, mDNS
+  `.local`, and all active interface/route IPs — protecting against
+  DNS-rebinding attacks from remote web pages while staying resilient
+  across DHCP address changes and multi-homed setups. Hosts the server
+  cannot discover itself (e.g. a systemd-nspawn container addressed by
+  its machine name via `nss-mymachines`, resolvable only on the host)
+  must be added to `PI_WEB_TRUSTED_HOSTS`, otherwise such requests get
+  `400 Bad Request`.
+- **Cross-site rejection:** all endpoints additionally reject requests
+  that modern browsers mark as `Sec-Fetch-Site: cross-site` (403) — a
+  remote page cannot probe the LAN endpoint with `<img>`/`<script>`
+  subresource requests. Top-level GET navigations (following a link to
+  the app from another site) stay allowed. Non-browser clients (curl,
+  pi tooling) don't send the header and are unaffected. Pages on other
+  ports of the same host count as `same-site` and are not covered by
+  this check.
+- **One deliberate exception:** passive subresource loads (`<img>`,
+  `<link>`, `<script>`, fonts, media) of `/raw/<token>/*` files are
+  allowed even when labelled cross-site. The sandboxed HTML-preview
+  iframe has an opaque origin, so browsers label everything it
+  requests as cross-site — without the exception, relative assets in a
+  previewed HTML page could not load. The `<token>` prefix is an
+  unguessable per-process secret distributed only to the same-origin
+  SPA, so remote pages cannot guess `/raw/` URLs to probe file
+  existence or perform XSSI.
+
+### Exfiltration hardening
+
+- **Agent output never auto-loads remote images:** `https:` images in
+  chat messages become click-through links (a prompt-injected reply
+  could otherwise exfiltrate data through the URL of an image the
+  browser fetches on its own). Alternate HTML/SVG subresource loaders
+  (`srcset`, `poster`, `<picture>`, `<source>`, `<video>`, `<audio>`,
+  `<svg><image>`, `<feImage>`, `<use>`, `<foreignObject>`) are stripped
+  by DOMPurify. The markdown file viewer does load `https:` images
+  (README badges); `http:` images are blocked everywhere by CSP.
+
+### Response headers
+
+- `Content-Security-Policy: frame-ancestors 'none'` (plus
+  `X-Frame-Options: DENY`) on the app page — other pages cannot embed
+  it in an iframe and clickjack the UI
+- `X-Content-Type-Options: nosniff` and `Referrer-Policy:
+  no-referrer` on all responses; `Cache-Control: no-store` on
+  API/dynamic responses
+
+### Workspace containment
+
+All web endpoints that touch the filesystem (project registration,
+directory picker, file browser, preview, diff, delete, download) are
+confined to a **workspace root** — the parent directory of the app by
+default, overridable with `PI_WEB_WORKSPACE`. Registry entries outside
+the workspace (stale or hand-edited) are flagged in the UI, cannot be
 opened, and can only be detached. This is an honest UI boundary, not a
 sandbox for the agent: pi itself runs with full user privileges and its
 bash tool can read and write anywhere the OS user can.
@@ -139,18 +229,19 @@ Browser  <--SSE / REST-->  Flask (app.py)  <--JSONL stdin/stdout-->  pi --mode r
 ```
 
 - The Flask app spawns `pi --mode rpc` at startup (in the most recently
-  opened project's directory). If the pi process dies unexpectedly, it is
-  respawned automatically on the next request and resumes the latest
+  opened project's directory). If the pi process dies unexpectedly, it
+  is respawned automatically on the next request and resumes the latest
   session; connected tabs are notified via a `pi_exited` SSE event and
-  reconnect on their own. A reader thread parses
-  pi's stdout, routes correlated command responses to waiting HTTP handlers
-  (request/response correlation via UUIDs), and broadcasts all other events
-  to SSE subscribers.
+  reconnect on their own. A reader thread parses pi's stdout, routes
+  correlated command responses to waiting HTTP handlers (request/response
+  correlation via UUIDs), and broadcasts all other events to SSE
+  subscribers.
 - The frontend is a Svelte 5 + Vite single-page app in [`web/`](web/),
   built into `web/dist/`, which Flask serves at `/`. See
   [web/README.md](web/README.md) for frontend-specific notes.
-- Styling is plain CSS with theme variables ([`web/src/app.css`](web/src/app.css));
-  highlight.js themes are scoped per app theme so they don't clash.
+- Styling is plain CSS with theme variables
+  ([`web/src/app.css`](web/src/app.css)); highlight.js themes are scoped
+  per app theme so they don't clash.
 
 ## Project layout
 
@@ -179,121 +270,14 @@ Generated content (not committed): `web/dist/`, `web/node_modules/`,
 `.venv/`, `build/`, `__pycache__/`, `projects-<port>.json` (the per-port
 project registry).
 
-## Backend API (Flask → pi RPC bridge)
-
-Chat and agent control:
-
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/events` | GET (SSE) | Stream of pi events (5 s keepalive comments; the stream ends once its pi process is gone — clients reconnect on `project_switched`/`pi_exited`) |
-| `/prompt` | POST | Send a prompt; optional `images` and `streamingBehavior` |
-| `/abort` | POST | Abort the current run |
-| `/bash` | POST | Run a shell command in the project cwd; async — returns the command id, streamed output arrives as `bash_execution_update` SSE events, the result as a synthetic `bash_execution_end` event |
-| `/abort_bash` | POST | Abort running `/bash` commands (pi cancels all of them) |
-| `/new_session` | POST | Start a new session |
-| `/messages` | GET | Current session message history |
-| `/state` | GET | Agent state (model, thinking level, session file, ...) |
-| `/stats` | GET | Session stats (tokens, cost, context usage, tool calls) |
-
-Configuration:
-
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/models` | GET | Available models |
-| `/set_model` | POST | Switch model (`provider`, `modelId`) |
-| `/thinking_levels` | GET | Available thinking levels |
-| `/set_thinking` | POST | Set thinking level |
-
-Sessions and slash commands:
-
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/sessions` | GET | List recent session files (newest first, max 50) |
-| `/switch_session` | POST | Switch to a session file (path confined to the session dir) |
-| `/commands` | GET | Slash commands invocable via prompt (pi `get_commands`) |
-| `/compact` | POST | Compact context; optional `customInstructions` |
-| `/set_session_name` | POST | Set session display name |
-| `/delete_sessions` | POST | Delete session files from disk (paths confined to the session dir; deleting the active session is allowed) |
-| `/api/auto_name` | POST | Name the session from its content via a one-shot pi call (no-op if already named or too little content; `force: true` regenerates) |
-| `/export_html` | POST | Export session to an HTML file |
-| `/ui-response` | POST | Relay extension UI dialog responses to pi (dialogs only; fire-and-forget requests like `notify` get no response) |
-
-Projects:
-
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/api/projects` | GET | List registered projects (marks the current one; flags entries outside the workspace) |
-| `/api/dirs?path=` | GET | Directory picker for the new-project dialog: directories only, confined to the workspace root |
-| `/api/projects` | POST | Register an existing directory or create a new one (`path`, optional `gitInit`), or clone a repo into the workspace (`gitUrl`, optional `folder`; the folder defaults to the repo name from the URL); the project name is the leaf directory name; paths must lie inside the workspace (403 otherwise) |
-| `/api/projects/<id>/open` | POST | Switch the active project: respawn pi with the project dir as cwd (403 if the project is outside the workspace) |
-| `/api/projects/<id>/detach` | POST | Remove a project from the registry (directory stays on disk; detaching the current project is allowed — pi keeps running there, the UI enters a "no project" state and other tabs get `project_detached`) |
-| `/api/projects/<id>/last-file` | POST | Remember the project's open viewer file (`lastFile`) |
-
-File browser and static hosting:
-
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/api/list?path=` | GET | List a directory under the project root |
-| `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB) |
-| `/api/diff?path=` | GET | Full-context git diff (`-U…`) for one file (worktree vs HEAD; untracked vs /dev/null), rendered by the frontend as an in-file diff with changed lines highlighted |
-| `/api/file/delete` | POST | Delete a file (or directory tree) under the project root |
-| `/api/file/create` | POST | Create an empty file or directory under the project root (409 if it already exists) |
-| `/api/file/save` | POST | Save file content from edit mode (atomic write, permission-preserving; rejects with `conflict: true` when the disk content no longer matches the client's `base`, unless `force`) |
-| `/raw/<token>/<path>` | GET | Serve a file inline (image/HTML preview; per-process token + nosniff + CSP sandbox) |
-| `/download/<path>` | GET | Download a file |
-| `/` | GET | Serve the built SPA from `web/dist/` |
-
-Paths for `/api/list`, `/api/file`, `/api/diff`, `/api/file/delete`,
-`/api/file/create`, `/api/file/save`, `/raw/*`, and `/download/*` are confined to
-the current project's root, which itself must lie inside the workspace
-root (traversal attempts get 403; symlinks are resolved before the
-containment check). POST endpoints require an
-`X-Requested-With: XMLHttpRequest` header (CSRF protection, 403 otherwise),
-and every endpoint rejects requests labelled `Sec-Fetch-Site: cross-site`
-by the browser (403), except top-level GET navigations. POST endpoints validate their JSON bodies and
-return 400 on missing fields; RPC calls time out after 30 s with a
-`{"success": false, "error": "timeout"}` response.
-
-## Usage
-
-Prerequisites: Python 3, Node.js/npm, and `pi` on `PATH`.
+## Development
 
 ```sh
-# Backend dependencies (once)
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-
-# Frontend build
-cd web && npm install && npm run build && cd ..
-
-# Run (serves the UI on port 5000 on the primary LAN IP plus loopback;
-# HOST=127.0.0.1 restricts to loopback, HOST=0.0.0.0 opens all
-# interfaces, PORT=... changes the port)
-# Optional: PI_WEB_WORKSPACE=/path/to/workspace confines projects and
-# the file browser to that directory (default: parent of the app dir).
-# Optional: PI_WEB_TRUSTED_HOSTS=name1,name2 accepts extra Host headers
-# (e.g. a container name resolved by nss-mymachines on the host).
-# All of these can also live in a local, gitignored .env file.
-python app.py
+cd web && npm run dev   # Vite dev server with live reload; proxies
+                        # API calls to app.py on 127.0.0.1:5000
 ```
 
-Or use the [Makefile](Makefile): `make build`, `make run` (rebuilds the
-frontend and starts the server in one step), `make dev` (Vite dev server),
-`make serve` (gunicorn via [`gunicorn.conf.py`](gunicorn.conf.py), one
-worker with a 64-thread pool — honoring `HOST`/`PORT`/`.env` and binding
-loopback alongside the LAN IP just like `python app.py`; every open
-browser tab holds one thread for its event stream, and raising `-w` is
-not supported since the pi subprocess lives in the worker).
-`PORT=5001 make serve` starts a second, fully independent instance —
-each port has its own project registry, its own pi subprocess, and its
-own sessions.
-
-Frontend development with hot module reload:
-
-```sh
-cd web && npm run dev   # proxies API calls to app.py on 127.0.0.1:5000
-```
-(Keep `python app.py` running alongside the dev server.)
+Keep `python app.py` running alongside the dev server.
 
 Two things to know:
 
@@ -308,10 +292,89 @@ Two things to know:
   so newly added templates only appear after a restart or project
   switch.
 
-Run `make test` for the backend unit and security test suite
-([`tests/test_app.py`](tests/test_app.py), mocked `PiProcess`), and
-`make check` for full verification (`py_compile` + `ruff` + unit tests +
-frontend build). Run `make audit` periodically to scan the pinned
-backend dependencies (`pip-audit`) and frontend dependencies (`npm audit`)
-for known vulnerabilities; it needs network access and `pip-audit` in the
-venv (`.venv/bin/python -m pip install -r requirements-dev.txt`).
+### Testing and verification
+
+- `make test` — backend unit and security test suite
+  ([`tests/test_app.py`](tests/test_app.py), mocked `PiProcess`)
+- `make check` — full static verification: `py_compile` + `ruff` +
+  unit tests + frontend build
+- `make audit` — dependency vulnerability scan (`pip-audit` on the
+  pinned backend deps, full `npm audit` on the frontend). Needs network
+  access and pip-audit in the venv:
+  `.venv/bin/python -m pip install -r requirements-dev.txt`
+
+## Backend API reference
+
+### Chat and agent control
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/events` | GET (SSE) | Stream of pi events (5 s keepalive comments; the stream ends once its pi process is gone — clients reconnect on `project_switched`/`pi_exited`) |
+| `/prompt` | POST | Send a prompt; optional `images` and `streamingBehavior` |
+| `/abort` | POST | Abort the current run |
+| `/bash` | POST | Run a shell command in the project cwd; async — returns the command id, streamed output arrives as `bash_execution_update` SSE events, the result as a synthetic `bash_execution_end` event |
+| `/abort_bash` | POST | Abort running `/bash` commands (pi cancels all of them) |
+| `/new_session` | POST | Start a new session |
+| `/messages` | GET | Current session message history |
+| `/state` | GET | Agent state (model, thinking level, session file, ...) |
+| `/stats` | GET | Session stats (tokens, cost, context usage, tool calls) |
+
+### Model configuration
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/models` | GET | Available models |
+| `/set_model` | POST | Switch model (`provider`, `modelId`) |
+| `/thinking_levels` | GET | Available thinking levels |
+| `/set_thinking` | POST | Set thinking level |
+
+### Sessions and slash commands
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/sessions` | GET | List recent session files (newest first, max 50) |
+| `/switch_session` | POST | Switch to a session file (path confined to the session dir) |
+| `/commands` | GET | Slash commands invocable via prompt (pi `get_commands`) |
+| `/compact` | POST | Compact context; optional `customInstructions` |
+| `/set_session_name` | POST | Set session display name |
+| `/delete_sessions` | POST | Delete session files from disk (paths confined to the session dir; deleting the active session is allowed) |
+| `/api/auto_name` | POST | Name the session from its content via a one-shot pi call (no-op if already named or too little content; `force: true` regenerates) |
+| `/export_html` | POST | Export session to an HTML file |
+| `/ui-response` | POST | Relay extension UI dialog responses to pi (dialogs only; fire-and-forget requests like `notify` get no response) |
+
+### Projects
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/projects` | GET | List registered projects (marks the current one; flags entries outside the workspace) |
+| `/api/dirs?path=` | GET | Directory picker for the new-project dialog: directories only, confined to the workspace root |
+| `/api/projects` | POST | Register an existing directory or create a new one (`path`, optional `gitInit`), or clone a repo into the workspace (`gitUrl`, optional `folder`; the folder defaults to the repo name from the URL); the project name is the leaf directory name; paths must lie inside the workspace (403 otherwise) |
+| `/api/projects/<id>/open` | POST | Switch the active project: respawn pi with the project dir as cwd (403 if the project is outside the workspace) |
+| `/api/projects/<id>/detach` | POST | Remove a project from the registry (directory stays on disk; detaching the current project is allowed — pi keeps running there, the UI enters a "no project" state and other tabs get `project_detached`) |
+| `/api/projects/<id>/last-file` | POST | Remember the project's open viewer file (`lastFile`) |
+
+### File browser and static hosting
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/list?path=` | GET | List a directory under the project root |
+| `/api/file?path=` | GET | Preview a file (UTF-8, max 512 KB) |
+| `/api/diff?path=` | GET | Full-context git diff (`-U…`) for one file (worktree vs HEAD; untracked vs /dev/null), rendered by the frontend as an in-file diff with changed lines highlighted |
+| `/api/file/delete` | POST | Delete a file (or directory tree) under the project root |
+| `/api/file/create` | POST | Create an empty file or directory under the project root (409 if it already exists) |
+| `/api/file/save` | POST | Save file content from edit mode (atomic write, permission-preserving; rejects with `conflict: true` when the disk content no longer matches the client's `base`, unless `force`) |
+| `/raw/<token>/<path>` | GET | Serve a file inline (image/HTML preview; per-process token + nosniff + CSP sandbox) |
+| `/download/<path>` | GET | Download a file |
+| `/` | GET | Serve the built SPA from `web/dist/` |
+
+Paths for `/api/list`, `/api/file`, `/api/diff`, `/api/file/delete`,
+`/api/file/create`, `/api/file/save`, `/raw/*`, and `/download/*` are
+confined to the current project's root, which itself must lie inside the
+workspace root (traversal attempts get 403; symlinks are resolved before
+the containment check). POST endpoints require an
+`X-Requested-With: XMLHttpRequest` header (CSRF protection, 403
+otherwise), and every endpoint rejects requests labelled
+`Sec-Fetch-Site: cross-site` by the browser (403), except top-level GET
+navigations. POST endpoints validate their JSON bodies and return 400 on
+missing fields; RPC calls time out after 30 s with a
+`{"success": false, "error": "timeout"}` response.
