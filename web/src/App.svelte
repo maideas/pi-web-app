@@ -372,22 +372,44 @@
   // fetched from /commands. Built-in TUI commands (/model, /resume, ...) are NOT
   // recognized via RPC and get intercepted/blocked in handleSlashCommand.
   const BUILTIN_COMMANDS = [
-    { name: 'new', description: 'Start a new session' },
-    { name: 'abort', description: 'Stop the current run' },
-    { name: 'compact', description: 'Compact context (optional instructions)' },
-    { name: 'name', description: 'Set session display name' },
-    { name: 'rename', description: 'Generate a session name from the chat content' },
-    { name: 'export', description: 'Export session to HTML' },
+    { name: 'new', description: 'Start a new session', source: 'builtin' },
+    { name: 'abort', description: 'Stop the current run', source: 'builtin' },
+    { name: 'compact', description: 'Compact context (optional instructions)', source: 'builtin' },
+    { name: 'name', description: 'Set session display name', source: 'builtin' },
+    { name: 'rename', description: 'Generate a session name from the chat content', source: 'builtin' },
+    { name: 'export', description: 'Export session to HTML', source: 'builtin' },
   ]
+  const SLASH_SOURCE_LABELS = { builtin: 'built-in', extension: 'ext', prompt: 'prompt', skill: 'skill' }
   let slashCommands = $state([]) // [{ name, description, source }]
+  let commandsLoaded = false
+  let commandsInFlight = null
   // Escape closes the menu until the input changes again.
   let slashDismissed = $state(false)
-  let slashSuggestions = $derived(
-    !slashDismissed && input.startsWith('/') && !input.includes(' ')
-      ? [...BUILTIN_COMMANDS, ...slashCommands]
-          .filter((c) => c.name.startsWith(input.slice(1)))
-      : []
-  )
+  // Rank slash-command matches: direct prefix first, then prefix after
+  // `:` (so `/mark` finds `skill:markdown-authoring`), then substring.
+  // Built-ins come first and shadow any identically named pi command so
+  // keys stay unique. Closes on any whitespace (including Shift+Enter).
+  let slashSuggestions = $derived.by(() => {
+    if (slashDismissed || !input.startsWith('/') || /\s/.test(input)) return []
+    const q = input.slice(1).toLowerCase()
+    const seen = new Set()
+    const all = []
+    for (const c of [...BUILTIN_COMMANDS, ...slashCommands]) {
+      if (seen.has(c.name)) continue
+      seen.add(c.name)
+      all.push(c)
+    }
+    if (!q) return all
+    const tiers = [[], [], []]
+    for (const c of all) {
+      const name = c.name.toLowerCase()
+      const colon = name.indexOf(':')
+      if (name.startsWith(q)) tiers[0].push(c)
+      else if (colon !== -1 && name.slice(colon + 1).startsWith(q)) tiers[1].push(c)
+      else if (name.includes(q)) tiers[2].push(c)
+    }
+    return [...tiers[0], ...tiers[1], ...tiers[2]]
+  })
   // Keyboard navigation in the slash menu: ArrowUp/ArrowDown move the
   // selection, Enter (and Tab) insert it. Resets whenever the
   // suggestion list changes.
@@ -2785,7 +2807,10 @@
         })
         return
       }
-      default:
+      default: {
+        // Wait for the initial /commands fetch if a command is submitted
+        // right after page load before rejecting it as unknown.
+        if (!commandsLoaded) await (commandsInFlight ?? loadCommands())
         if (slashCommands.some((c) => c.name === cmd)) {
           // Recognized by pi (extension/skill/template) — forward as prompt.
           entries.push({ role: 'user', text: message })
@@ -2794,15 +2819,17 @@
           const r = await apiPost('/prompt', body)
           reportFailure(r, `command /${cmd} failed`)
         } else {
+          const seen = new Set(BUILTIN_COMMANDS.map((c) => c.name))
           const available = [
             ...BUILTIN_COMMANDS.map((c) => '/' + c.name),
-            ...slashCommands.map((c) => '/' + c.name),
+            ...slashCommands.filter((c) => !seen.has(c.name)).map((c) => '/' + c.name),
           ].join(', ')
           entries.push({
             role: 'system',
             text: `⚠️ Unknown command /${cmd}. Built-in TUI commands don't work here. Available: ${available}`,
           })
         }
+      }
     }
   }
 
@@ -3047,8 +3074,17 @@
   }
 
   async function loadCommands() {
-    const r = await apiGet('/commands')
-    if (r.success) slashCommands = r.data?.commands ?? []
+    const p = apiGet('/commands').then((r) => {
+      if (r.success) {
+        slashCommands = r.data?.commands ?? []
+        commandsLoaded = true
+      }
+      return r
+    }).finally(() => {
+      if (commandsInFlight === p) commandsInFlight = null
+    })
+    commandsInFlight = p
+    return p
   }
 
   let eventSource = null
@@ -3447,6 +3483,7 @@
         <button class="slash-item" class:selected={i === slashIndex} onmousedown={(e) => { e.preventDefault(); applySlashSuggestion(c) }}>
           <span class="slash-name">/{c.name}</span>
           {#if c.description}<span class="slash-desc">{c.description}</span>{/if}
+          {#if c.source}<span class="slash-source">{SLASH_SOURCE_LABELS[c.source] ?? c.source}</span>{/if}
         </button>
       {/each}
     </div>
