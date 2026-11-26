@@ -42,7 +42,9 @@ from flask import abort as http_abort
 PI_CMD = ["pi", "--mode", "rpc"]
 DIST_DIR = "web/dist"
 # Auto-naming threshold: combined length of the session's user messages.
-MIN_USER_CHARS = 120
+# High enough to skip tiny greetings/openers ("hi", "can you help?"),
+# low enough that real single-sentence tasks get named on the first turn.
+MIN_USER_CHARS = 40
 # Upper bound for how long a /bash waiter thread polls for the command
 # result before giving up — a live-but-unresponsive pi process would
 # otherwise leak one thread per command. Generous on purpose: builds
@@ -1274,10 +1276,17 @@ def _auto_name_locked(force: bool):
             timeout=60, check=False, cwd=p.cwd,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
+        log.warning("auto_name call failed: %s", exc)
         return jsonify({"success": False, "error": f"naming call failed: {exc}"})
+    if r.returncode != 0:
+        detail = (r.stderr or "").strip().splitlines()
+        msg = detail[-1] if detail else f"exit code {r.returncode}"
+        log.warning("auto_name pi exited %s: %s", r.returncode, msg)
+        return jsonify({"success": False, "error": f"naming call failed: {msg}"})
     first_line = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
     name = first_line.strip().strip('"\'*').rstrip(".!")[:60]
     if not name:
+        log.warning("auto_name produced empty title (stderr=%.200s)", (r.stderr or "").strip())
         return jsonify({"success": False, "error": "empty name"})
     # The user may have switched or started a session while the one-shot
     # call ran — don't apply the title to the wrong session.

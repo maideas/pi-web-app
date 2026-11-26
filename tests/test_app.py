@@ -414,6 +414,74 @@ class TestConcurrencyAndResources(BaseAppTest):
         self.assertEqual(web_app.current["project"]["id"], "proj0001")
 
 
+class TestAutoName(BaseAppTest):
+    def _mock_rpc(self, messages: list[dict], session_name: str | None = None):
+        def rpc(cmd: dict, timeout: float = 30.0) -> dict:
+            self.fake_pi.rpc_calls.append(cmd)
+            t = cmd.get("type")
+            if t == "get_state":
+                return {
+                    "success": True,
+                    "data": {
+                        "sessionFile": str(self.session_file),
+                        "sessionName": session_name,
+                        "model": {"provider": "openrouter", "id": "test/model"},
+                    },
+                }
+            if t == "get_messages":
+                return {"success": True, "data": {"messages": messages}}
+            return {"success": True, "data": {}}
+
+        return mock.patch.object(self.fake_pi, "rpc_request", side_effect=rpc)
+
+    def test_auto_name_skips_short_opener(self):
+        msgs = [{"role": "user", "content": "hi there"}]
+        with self._mock_rpc(msgs), mock.patch.object(web_app.subprocess, "run") as run:
+            r = self.client.post("/api/auto_name", json={}, headers=XHR_HEADERS)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json(), {"success": False, "error": "not enough content"})
+        run.assert_not_called()
+
+    def test_auto_name_names_single_sentence_task(self):
+        msgs = [{"role": "user", "content": "please plan a 2-week trip through Poland starting from Berlin"}]
+        fake_res = subprocess.CompletedProcess([], 0, stdout='"Poland Trip Plan from Berlin."\n', stderr="")
+        with self._mock_rpc(msgs), mock.patch.object(web_app.subprocess, "run", return_value=fake_res) as run:
+            r = self.client.post("/api/auto_name", json={}, headers=XHR_HEADERS)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.get_json(),
+            {"success": True, "name": "Poland Trip Plan from Berlin", "previous": None},
+        )
+        run.assert_called_once()
+        self.assertTrue(
+            any(
+                c.get("type") == "set_session_name" and c.get("name") == "Poland Trip Plan from Berlin"
+                for c in self.fake_pi.rpc_calls
+            )
+        )
+
+    def test_auto_name_rejects_nonzero_exit(self):
+        msgs = [{"role": "user", "content": "please plan a 2-week trip through Poland starting from Berlin"}]
+        fake_res = subprocess.CompletedProcess([], 1, stdout="Error: rate limited\n", stderr="429 Too Many Requests\n")
+        with (
+            self._mock_rpc(msgs),
+            mock.patch.object(web_app.subprocess, "run", return_value=fake_res),
+            self.assertLogs(web_app.log, level="WARNING"),
+        ):
+            r = self.client.post("/api/auto_name", json={}, headers=XHR_HEADERS)
+        body = r.get_json()
+        self.assertFalse(body["success"])
+        self.assertIn("429 Too Many Requests", body["error"])
+        self.assertFalse(any(c.get("type") == "set_session_name" for c in self.fake_pi.rpc_calls))
+
+    def test_auto_name_force_allows_short_message(self):
+        msgs = [{"role": "user", "content": "check tests"}]
+        fake_res = subprocess.CompletedProcess([], 0, stdout="Check Tests\n", stderr="")
+        with self._mock_rpc(msgs), mock.patch.object(web_app.subprocess, "run", return_value=fake_res):
+            r = self.client.post("/api/auto_name", json={"force": True}, headers=XHR_HEADERS)
+        self.assertEqual(r.get_json(), {"success": True, "name": "Check Tests", "previous": None})
+
+
 class TestGunicornConfig(unittest.TestCase):
     def test_resolve_binds(self):
         spec = importlib.util.spec_from_file_location("gunicorn_conf", Path(web_app.APP_ROOT) / "gunicorn.conf.py")
