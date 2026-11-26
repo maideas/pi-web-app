@@ -1517,6 +1517,17 @@
   // image renderer.
   let mdImageBase = ''
   let mdRemoteImages = false
+  // Cache-buster for rewritten /raw/ image URLs (mdImageV): browsers
+  // (Chrome's memory cache) may reuse an image without revalidating,
+  // even on Cache-Control: no-cache responses — so a file changed on disk
+  // (e.g. by an agent run) would render stale until a hard browser
+  // refresh. A fresh v per viewer file load (selectedFile.v, new on every
+  // in-app refresh) or per chat page load (mdPageV) forces a refetch
+  // exactly when the content is re-rendered, while staying constant
+  // while a message streams (its re-renders must not refetch).
+  let mdImageV = ''
+  const mdPageV = Date.now()
+  const bustUrl = (url, v) => (v ? `${url}${url.includes('?') ? '&' : '?'}v=${v}` : url)
   // Shared sanitizer deny-lists. Forbid style/form controls and every
   // HTML/SVG subresource-loading element or attribute outside <img> so
   // prompt-injected chat output cannot trigger outbound image fetches
@@ -1550,9 +1561,10 @@
     return a
   }
 
-  function renderMarkdown(text, base = '', { remoteImages = false } = {}) {
+  function renderMarkdown(text, base = '', { remoteImages = false, v = mdPageV } = {}) {
     mdImageBase = base
     mdRemoteImages = remoteImages
+    mdImageV = String(v ?? '')
     slugger.reset()
     try {
       const parsed = marked.parse(text ?? '', { async: false })
@@ -1567,7 +1579,13 @@
           img.remove()
           continue
         }
-        if (rawPrefix && src.startsWith(rawPrefix)) continue
+        if (rawPrefix && src.startsWith(rawPrefix)) {
+          // Already a /raw/<token>/ URL (emitted by the image renderer or
+          // authored HTML): keep it, but re-bust so a changed file on
+          // disk is not served from the browser's memory cache.
+          img.setAttribute('src', bustUrl(src, mdImageV))
+          continue
+        }
         if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//')) {
           if (/^data:/i.test(src) || (remoteImages && /^https:/i.test(src))) continue
           img.replaceWith(remoteImagePlaceholderNode(src, img.getAttribute('alt') ?? ''))
@@ -1579,7 +1597,7 @@
           continue
         }
         const path = normalizePath(base ? `${base}/${decodeHref(src)}` : decodeHref(src))
-        const url = rawUrl(path)
+        const url = bustUrl(rawUrl(path), mdImageV)
         if (url) img.setAttribute('src', url)
         else img.replaceWith(document.createTextNode(img.getAttribute('alt') || path))
       }
@@ -1600,6 +1618,7 @@
     } finally {
       mdImageBase = ''
       mdRemoteImages = false
+      mdImageV = ''
     }
   }
 
@@ -3691,7 +3710,7 @@
           {:else if selectedFile.text !== null && isMarkdown(selectedFile.path) && !plainView}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div class="filecontent md" onclick={(e) => onMdClick(e, selectedFile.path.split('/').slice(0, -1).join('/'))}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'), { remoteImages: true })}</div>
+            <div class="filecontent md" onclick={(e) => onMdClick(e, selectedFile.path.split('/').slice(0, -1).join('/'))}>{@html renderMarkdown(selectedFile.text, selectedFile.path.split('/').slice(0, -1).join('/'), { remoteImages: true, v: selectedFile.v })}</div>
           {:else if selectedFile.text !== null && isHtml(selectedFile.path) && !plainView}
             <div class="filecontent html">
               {#if rawToken}
